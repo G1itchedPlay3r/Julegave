@@ -1,0 +1,56 @@
+[
+  {
+    "ContainingType": "Website\u002B\u003C\u003Ec",
+    "Method": "\u003CStartApiAsync\u003Eb__1_3",
+    "RelativePath": "",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "Website\u002B\u003C\u003Ec",
+    "Method": "\u003CStartApiAsync\u003Eb__1_2",
+    "RelativePath": "gifts",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "Website\u002B\u003C\u003Ec",
+    "Method": "\u003CStartApiAsync\u003Eb__1_1",
+    "RelativePath": "gifts/{person}",
+    "HttpMethod": "GET",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "person",
+        "Type": "System.String",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ]
+  }
+]

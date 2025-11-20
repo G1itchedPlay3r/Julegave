@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "dgSpecHash": "LGfiwuosipo=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\rud\\OneDrive\\Skrivebord\\Julegave-main\\JulegaveListe\\JulegaveListe\\JulegaveListe.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\rud\\.nuget\\packages\\htmlagilitypack\\1.12.4\\htmlagilitypack.1.12.4.nupkg.sha512",
+    "C:\\Users\\rud\\.nuget\\packages\\selenium.webdriver\\4.26.1\\selenium.webdriver.4.26.1.nupkg.sha512",
+    "C:\\Users\\rud\\.nuget\\packages\\selenium.webdriver.chromedriver\\131.0.6778.8500\\selenium.webdriver.chromedriver.131.0.6778.8500.nupkg.sha512"
+  ],
+  "logs": []
+}

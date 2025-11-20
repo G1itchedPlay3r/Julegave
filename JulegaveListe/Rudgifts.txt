@@ -1,0 +1,1 @@
+Test Product|299|https://www.pricerunner.dk/test|123-456|2025-11-19T10:00:00.0000000Z|Test Shop

@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="no">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Julegaver ønsker 2025</title>
+    <style>
+        body{font-family:Segoe UI, Roboto, Arial, sans-serif; padding:1rem; line-height:1.4}
+        header h1{margin:0 0 1rem}
+        #controls{margin:0 0 1rem; display:flex; gap:.5rem}
+        #controls button{padding:.5rem .75rem; border:1px solid #777; background:#f3f3f3; cursor:pointer; border-radius:6px}
+        #controls button.active{background:#0b6; color:white; border-color:#097}
+        #gift-list{list-style:disc inside; padding:0; margin:0}
+        #gift-list li{padding:.25rem 0}
+        .note{color:#555; font-size:.95rem; margin-top:.75rem}
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Julegaver ønsker 2025</h1>
+    </header>
+
+    <div id="controls" aria-label="Velg person">
+        <button data-person="rud">Rud</button>
+        <button data-person="katrine">Katrine</button>
+        <button data-person="jannic">Jannic</button>
+        <button data-person="hjalte">Hjalte</button>
+    </div>
+
+    <section>
+        <ul id="gift-list" aria-live="polite"></ul>
+        <p class="note">Trykk en knapp for å se ønskelisten for den personen.</p>
+    </section>
+
+    <script>
+            // Fetch lists from the local API started by the console app.
+            const listEl = document.getElementById('gift-list');
+            const buttons = document.querySelectorAll('#controls button');
+
+            // Escape text to avoid accidental HTML injection
+            function escapeHtml(str){
+                return String(str)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            }
+
+            async function fetchAndRender(personKey){
+                listEl.innerHTML = '<li><em>Laster...</em></li>';
+                try{
+                    const resp = await fetch('http://localhost:5000/gifts/' + encodeURIComponent(personKey));
+                    if(!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+                        const data = await resp.json();
+                        console.log('Fetched gifts for', personKey, data);
+                            if(!Array.isArray(data) || data.length === 0){
+                                listEl.innerHTML = '<li><em>Ingen ønsker registrert.</em></li>';
+                            } else {
+                                // JSON produced by the .NET API may have PascalCase or camelCase property names depending on serializer settings.
+                                // Read properties in a case-tolerant way to avoid 'undefined' showing in the UI.
+                                const getString = (obj, ...keys) => {
+                                    for (const k of keys) {
+                                        if (Object.prototype.hasOwnProperty.call(obj, k) && obj[k] != null) return String(obj[k]);
+                                    }
+                                    return '';
+                                };
+                                            const getPrice = (obj) => {
+                                                const val = getString(obj, 'Price', 'price');
+                                                if (val === '') return '';
+                                                return val;
+                                            };
+
+                                            const getUrl = (obj) => {
+                                                return getString(obj, 'URl', 'Url', 'URL', 'url', 'uRl');
+                                            };
+
+                                            const getShopName = (obj) => {
+                                                return getString(obj, 'ShopName', 'shopName', 'Shopname');
+                                            };
+
+                                            const getIsManualPrice = (obj) => {
+                                                const val = obj.IsManualPrice ?? obj.isManualPrice ?? false;
+                                                return val === true || val === 'true' || val === 'True';
+                                            };
+
+                                            listEl.innerHTML = data.map(i => {
+                                                const produkt = getString(i, 'Produkt', 'produkt', 'Product', 'product', 'Name', 'name');
+                                                const price = getPrice(i);
+                                                const url = getUrl(i);
+                                                const shopName = getShopName(i);
+                                                const isManualPrice = getIsManualPrice(i);
+                                                const titleHtml = escapeHtml(produkt || 'Ukjent produkt');
+                                                const priceHtml = price ? ' — ' + escapeHtml(String(price)) + ' kr' : '';
+                                                const shopHtml = shopName ? ' <em>(fra ' + escapeHtml(shopName) + ')</em>' : '';
+                                                const manualPriceNote = isManualPrice ? ' <span style="color:#f60;font-size:.9em">[manuell pris - oppdateres ikke]</span>' : '';
+
+                                                if (url) {
+                                                    // render product name as a clickable link
+                                                    const href = escapeHtml(url);
+                                                    return `<li><a href="${href}" target="_blank" rel="noopener noreferrer">${titleHtml}</a>${priceHtml}${shopHtml}${manualPriceNote}</li>`;
+                                                }
+
+                                                return `<li>${titleHtml}${priceHtml}${shopHtml}${manualPriceNote}</li>`;
+                                            }).join('');
+                            }
+                    buttons.forEach(b => b.classList.toggle('active', b.dataset.person === personKey));
+                } catch (err) {
+                    listEl.innerHTML = `<li><em>Feil ved henting: ${escapeHtml(err.message)}</em></li>`;
+                }
+            }
+
+            buttons.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    fetchAndRender(btn.dataset.person);
+                });
+            });
+
+            // Initialize with the first person's list visible
+            if(buttons.length) fetchAndRender(buttons[0].dataset.person);
+    </script>
+</body>
+</html>
