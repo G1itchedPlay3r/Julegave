@@ -843,7 +843,7 @@ class Website
         {
             Console.Clear();
             Console.WriteLine("API running at http://localhost:5000\n");
-            Console.WriteLine("1: Add To List \n2: Remove In List \n3: Manual Update \n4: Switch to Daemon Mode");
+            Console.WriteLine("1: Add To List \n2: Remove In List \n3: Manual Update \n4: Switch to Daemon Mode \n5: Edit Item");
             string? input = Console.ReadLine();
 
             // If there's no console attached (e.g., running inside a container without stdin),
@@ -982,12 +982,128 @@ class Website
             {
                 await website.UpdatePris();
             }
+            else if (input == "5")
+            {
+                Console.Clear();
+                Console.WriteLine("Which list to edit? \n 1: Jannic \n 2: Katrine \n 3: Rud \n 4: Hjalte");
+                string? person = Console.ReadLine();
+                if (person == "1")
+                {
+                    Console.Clear();
+                    await website.ShowGiftList(@"\Jannicgifts.txt");
+                    await website.EditItem(@"\Jannicgifts.txt");
+                }
+                else if (person == "2")
+                {
+                    Console.Clear();
+                    await website.ShowGiftList(@"\Katrinegifts.txt");
+                    await website.EditItem(@"\Katrinegifts.txt");
+                }
+                else if (person == "3")
+                {
+                    Console.Clear();
+                    await website.ShowGiftList(@"\Rudgifts.txt");
+                    await website.EditItem(@"\Rudgifts.txt");
+                }
+                else if (person == "4")
+                {
+                    Console.Clear();
+                    await website.ShowGiftList(@"\Hjaltegifts.txt");
+                    await website.EditItem(@"\Hjaltegifts.txt");
+                }
+                else
+                {
+                    return;
+                }
+            }
             else
             {
                 return;
             }
         }
     }
+    public async Task EditItem(string FileLocation)
+    {
+        var storage = new FileStorage(FileLocation);
+        var list = await storage.LoadAsync();
+
+        if (list.Count == 0)
+        {
+            Console.WriteLine("No entries to edit.");
+            return;
+        }
+
+        // Show items with indexes
+        Console.WriteLine("\nSelect item to edit:");
+        for (int i = 0; i < list.Count; i++)
+        {
+            var g = list[i];
+            Console.WriteLine($"{i + 1}: {g.Produkt} | {g.Price} kr | {g.URl}");
+        }
+
+        Console.WriteLine();
+        Console.Write("Enter item number: ");
+        string? input = Console.ReadLine();
+        
+        if (!int.TryParse(input?.Trim(), out int idx) || idx < 1 || idx > list.Count)
+        {
+            Console.WriteLine("Invalid selection.");
+            return;
+        }
+
+        var item = list[idx - 1];
+        Console.WriteLine($"\nEditing: {item.Produkt}");
+        Console.WriteLine("\nWhat to edit?");
+        Console.WriteLine("1: Product Name");
+        Console.WriteLine("2: Price");
+        Console.WriteLine("3: Both");
+        Console.Write("Choice: ");
+        
+        string? choice = Console.ReadLine();
+        bool updated = false;
+
+        if (choice == "1" || choice == "3")
+        {
+            Console.Write($"\nCurrent name: {item.Produkt}");
+            Console.Write("\nNew name (leave empty to keep current): ");
+            string? newName = Console.ReadLine();
+            if (!string.IsNullOrWhiteSpace(newName))
+            {
+                item.Produkt = newName;
+                updated = true;
+                Console.WriteLine("✓ Name updated");
+            }
+        }
+
+        if (choice == "2" || choice == "3")
+        {
+            Console.Write($"\nCurrent price: {item.Price} kr");
+            Console.Write("\nNew price (leave empty to keep current): ");
+            string? priceInput = Console.ReadLine();
+            if (!string.IsNullOrWhiteSpace(priceInput) && float.TryParse(priceInput, NumberStyles.Any, CultureInfo.InvariantCulture, out float newPrice))
+            {
+                item.Price = newPrice;
+                item.IsManualPrice = true; // Mark as manual since user set it
+                updated = true;
+                Console.WriteLine("✓ Price updated (marked as manual)");
+            }
+        }
+
+        if (updated)
+        {
+            await storage.SaveAllAsync(list);
+            WebsiteList = list;
+            Console.WriteLine("\n✓ Changes saved successfully");
+        }
+        else
+        {
+            Console.WriteLine("\nNo changes made.");
+        }
+
+        Console.WriteLine("\nPress any key to continue...");
+        Console.ReadKey(true);
+    }
+
     public async Task RemoveEntryAsync(string FileLocation)
     {
         var storage = new FileStorage(FileLocation);
