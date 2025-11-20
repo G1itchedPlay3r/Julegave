@@ -250,18 +250,22 @@ class BrowserAutomation
                     string? text = element.Text?.Trim();
                     if (!string.IsNullOrWhiteSpace(text))
                     {
-                        // Extract numbers from text (handles formats like "1.299,00 kr" or "1299 kr")
+                        // Extract numbers from text (handles formats like "1.299,00 kr" or "1299 kr" or "299.95 kr")
                         var match = Regex.Match(text, @"(\d{1,3}(?:[.,\s]\d{3})*(?:[.,]\d{2})?)");
                         if (match.Success)
                         {
                             string priceText = match.Groups[1].Value;
-                            // Normalize: remove thousands separator (dot), ignore decimals (after comma)
-                            // Split on comma and only keep the part before it
+                            // Normalize: ignore decimals (after comma or dot)
+                            // Split on comma or dot and only keep the part before it
                             if (priceText.Contains(","))
                             {
                                 priceText = priceText.Split(',')[0];
                             }
-                            priceText = priceText.Replace(".", "").Replace(" ", "");
+                            if (priceText.Contains("."))
+                            {
+                                priceText = priceText.Split('.')[0];
+                            }
+                            priceText = priceText.Replace(" ", "");
                             
                             if (float.TryParse(priceText, NumberStyles.Any, CultureInfo.InvariantCulture, out float parsedPrice))
                             {
