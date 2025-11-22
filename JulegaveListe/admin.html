@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Julegave Admin</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 800px;
+            width: 100%;
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        h1 {
+            color: #667eea;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+
+        .main-menu {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 20px 40px;
+            font-size: 1.2em;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .btn-add {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-remove {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+
+        .btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .btn:active {
+            transform: translateY(-1px);
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+            font-size: 1.1em;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s ease;
+        }
+
+        input[type="text"]:focus,
+        input[type="number"]:focus,
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            width: 100%;
+            padding: 15px;
+            font-size: 1.1em;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+            padding: 12px 30px;
+            font-size: 1em;
+            margin-top: 10px;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .product-preview {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border: 2px solid #667eea;
+        }
+
+        .product-preview h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+
+        .item-list {
+            max-height: 400px;
+            overflow-y: auto;
+            margin: 20px 0;
+        }
+
+        .item-checkbox {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            background: #f8f9fa;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            transition: background 0.3s ease;
+        }
+
+        .item-checkbox:hover {
+            background: #e9ecef;
+        }
+
+        .item-checkbox input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            margin-right: 15px;
+            cursor: pointer;
+        }
+
+        .item-info {
+            flex: 1;
+        }
+
+        .item-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .item-price {
+            color: #667eea;
+            font-weight: bold;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+            font-size: 1.2em;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .message {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .message-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .message-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .message-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .no-items {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+            font-size: 1.3em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎄 Julegave Admin</h1>
+
+        <!-- Main Menu -->
+        <div id="mainMenu" class="main-menu">
+            <button class="btn btn-add" onclick="showAddForm()">➕ Tilføj gave</button>
+            <button class="btn btn-remove" onclick="showRemoveForm()">🗑️ Fjern gave</button>
+        </div>
+
+        <!-- Add Gift Form -->
+        <div id="addForm" class="hidden">
+            <h2 style="color: #667eea; margin-bottom: 20px;">Tilføj ny gave</h2>
+            
+            <div class="form-group">
+                <label for="addUrl">Produkt URL:</label>
+                <input type="text" id="addUrl" placeholder="Indtast URL til produktet">
+            </div>
+
+            <button class="btn btn-primary" onclick="fetchProductInfo()">Hent produkt information</button>
+
+            <div id="productPreview" class="hidden">
+                <div class="product-preview">
+                    <h3>Produkt information</h3>
+                    
+                    <div class="form-group">
+                        <label for="productName">Produkt navn:</label>
+                        <input type="text" id="productName">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="productPrice">Pris (kr):</label>
+                        <input type="number" id="productPrice" step="0.01">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="personSelect">Vælg person:</label>
+                        <select id="personSelect">
+                            <option value="">-- Vælg person --</option>
+                            <option value="jannic">Jannic</option>
+                            <option value="katrine">Katrine</option>
+                            <option value="rud">Rud</option>
+                            <option value="hjalte">Hjalte</option>
+                        </select>
+                    </div>
+
+                    <button class="btn btn-primary" onclick="saveGift()">💾 Gem gave</button>
+                </div>
+            </div>
+
+            <button class="btn btn-secondary" onclick="backToMenu()">↩️ Tilbage</button>
+        </div>
+
+        <!-- Remove Gift Form -->
+        <div id="removeForm" class="hidden">
+            <h2 style="color: #667eea; margin-bottom: 20px;">Fjern gaver</h2>
+            
+            <div class="form-group">
+                <label for="removePersonSelect">Vælg person:</label>
+                <select id="removePersonSelect" onchange="loadGiftsForRemoval()">
+                    <option value="">-- Vælg person --</option>
+                    <option value="jannic">Jannic</option>
+                    <option value="katrine">Katrine</option>
+                    <option value="rud">Rud</option>
+                    <option value="hjalte">Hjalte</option>
+                </select>
+            </div>
+
+            <div id="giftsList"></div>
+
+            <button class="btn btn-primary hidden" id="removeBtn" onclick="removeSelectedGifts()">🗑️ Fjern valgte</button>
+            <button class="btn btn-secondary" onclick="backToMenu()">↩️ Tilbage</button>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="loading" class="hidden">
+            <div class="spinner"></div>
+            <div class="loading">Indlæser...</div>
+        </div>
+
+        <!-- Message Area -->
+        <div id="messageArea"></div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:5001';
+        let isManualPrice = false;
+
+        function showAddForm() {
+            document.getElementById('mainMenu').classList.add('hidden');
+            document.getElementById('addForm').classList.remove('hidden');
+            document.getElementById('removeForm').classList.add('hidden');
+            document.getElementById('productPreview').classList.add('hidden');
+            document.getElementById('addUrl').value = '';
+        }
+
+        function showRemoveForm() {
+            document.getElementById('mainMenu').classList.add('hidden');
+            document.getElementById('addForm').classList.add('hidden');
+            document.getElementById('removeForm').classList.remove('hidden');
+            document.getElementById('removePersonSelect').value = '';
+            document.getElementById('giftsList').innerHTML = '';
+            document.getElementById('removeBtn').classList.add('hidden');
+        }
+
+        function backToMenu() {
+            document.getElementById('mainMenu').classList.remove('hidden');
+            document.getElementById('addForm').classList.add('hidden');
+            document.getElementById('removeForm').classList.add('hidden');
+            clearMessage();
+        }
+
+        function showLoading(show) {
+            document.getElementById('loading').classList.toggle('hidden', !show);
+        }
+
+        function showMessage(message, type = 'info') {
+            const messageArea = document.getElementById('messageArea');
+            messageArea.innerHTML = `<div class="message message-${type}">${message}</div>`;
+            
+            if (type === 'success') {
+                setTimeout(() => {
+                    clearMessage();
+                }, 3000);
+            }
+        }
+
+        function clearMessage() {
+            document.getElementById('messageArea').innerHTML = '';
+        }
+
+        async function fetchProductInfo() {
+            const url = document.getElementById('addUrl').value.trim();
+            
+            if (!url) {
+                showMessage('Indtast venligst en URL', 'error');
+                return;
+            }
+
+            clearMessage();
+            showLoading(true);
+
+            try {
+                const response = await fetch(`${API_URL}/api/product-info`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ url: url })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Kunne ikke hente produkt information');
+                }
+
+                const data = await response.json();
+                
+                document.getElementById('productName').value = data.productName || 'Ukendt produkt';
+                document.getElementById('productPrice').value = data.price || 0;
+                isManualPrice = data.isManualPrice;
+                
+                document.getElementById('productPreview').classList.remove('hidden');
+                
+                if (data.isManualPrice || data.price === 0) {
+                    showMessage('Pris kunne ikke findes automatisk. Indtast venligst pris manuelt.', 'info');
+                } else {
+                    showMessage('Produkt information hentet! Du kan redigere navn og pris hvis nødvendigt.', 'success');
+                }
+
+            } catch (error) {
+                showMessage(`Fejl: ${error.message}`, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function saveGift() {
+            const url = document.getElementById('addUrl').value.trim();
+            const productName = document.getElementById('productName').value.trim();
+            const price = parseFloat(document.getElementById('productPrice').value);
+            const person = document.getElementById('personSelect').value;
+
+            if (!url || !productName || !person) {
+                showMessage('Udfyld venligst alle felter', 'error');
+                return;
+            }
+
+            if (isNaN(price) || price < 0) {
+                showMessage('Indtast venligst en gyldig pris', 'error');
+                return;
+            }
+
+            clearMessage();
+            showLoading(true);
+
+            try {
+                const response = await fetch(`${API_URL}/api/add-gift`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        person: person,
+                        productName: productName,
+                        price: price,
+                        url: url,
+                        isManualPrice: isManualPrice || price !== parseFloat(document.getElementById('productPrice').value)
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Kunne ikke tilføje gave');
+                }
+
+                showMessage('✓ Gave tilføjet!', 'success');
+                
+                // Reset form
+                document.getElementById('addUrl').value = '';
+                document.getElementById('productName').value = '';
+                document.getElementById('productPrice').value = '';
+                document.getElementById('personSelect').value = '';
+                document.getElementById('productPreview').classList.add('hidden');
+                
+                setTimeout(() => {
+                    backToMenu();
+                }, 2000);
+
+            } catch (error) {
+                showMessage(`Fejl: ${error.message}`, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function loadGiftsForRemoval() {
+            const person = document.getElementById('removePersonSelect').value;
+            const giftsList = document.getElementById('giftsList');
+            const removeBtn = document.getElementById('removeBtn');
+
+            if (!person) {
+                giftsList.innerHTML = '';
+                removeBtn.classList.add('hidden');
+                return;
+            }
+
+            clearMessage();
+            showLoading(true);
+
+            try {
+                const response = await fetch(`http://localhost:5000/gifts/${person}`);
+                
+                if (!response.ok) {
+                    throw new Error('Kunne ikke hente gaver');
+                }
+
+                const gifts = await response.json();
+
+                if (gifts.length === 0) {
+                    giftsList.innerHTML = '<div class="no-items">Ingen gaver fundet</div>';
+                    removeBtn.classList.add('hidden');
+                    
+                    setTimeout(() => {
+                        backToMenu();
+                    }, 3000);
+                    return;
+                }
+
+                let html = '<div class="item-list">';
+                gifts.forEach((gift, index) => {
+                    html += `
+                        <div class="item-checkbox">
+                            <input type="checkbox" id="gift-${index}" data-url="${gift.uRl}">
+                            <label for="gift-${index}" class="item-info">
+                                <div class="item-name">${gift.produkt}</div>
+                                <div class="item-price">${gift.price} kr</div>
+                            </label>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+
+                giftsList.innerHTML = html;
+                removeBtn.classList.remove('hidden');
+
+            } catch (error) {
+                showMessage(`Fejl: ${error.message}`, 'error');
+                giftsList.innerHTML = '';
+                removeBtn.classList.add('hidden');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function removeSelectedGifts() {
+            const person = document.getElementById('removePersonSelect').value;
+            const checkboxes = document.querySelectorAll('#giftsList input[type="checkbox"]:checked');
+
+            if (checkboxes.length === 0) {
+                showMessage('Vælg venligst mindst én gave at fjerne', 'error');
+                return;
+            }
+
+            const urls = Array.from(checkboxes).map(cb => cb.getAttribute('data-url'));
+
+            clearMessage();
+            showLoading(true);
+
+            try {
+                const response = await fetch(`${API_URL}/api/remove-gifts`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        person: person,
+                        urls: urls
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Kunne ikke fjerne gaver');
+                }
+
+                showMessage(`✓ ${urls.length} gave(r) fjernet!`, 'success');
+                
+                setTimeout(() => {
+                    backToMenu();
+                }, 2000);
+
+            } catch (error) {
+                showMessage(`Fejl: ${error.message}`, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+    </script>
+</body>
+</html>

@@ -705,6 +705,34 @@ public class GiftInfo
     public string ShopName { get; set; }
     public bool IsManualPrice { get; set; }
 }
+
+public class ProductInfoRequest
+{
+    public string Url { get; set; } = string.Empty;
+}
+
+public class ProductInfoResponse
+{
+    public string ProductName { get; set; } = string.Empty;
+    public float Price { get; set; }
+    public bool IsManualPrice { get; set; }
+}
+
+public class AddGiftRequest
+{
+    public string Person { get; set; } = string.Empty;
+    public string ProductName { get; set; } = string.Empty;
+    public float Price { get; set; }
+    public string Url { get; set; } = string.Empty;
+    public bool IsManualPrice { get; set; }
+}
+
+public class RemoveGiftsRequest
+{
+    public string Person { get; set; } = string.Empty;
+    public List<string> Urls { get; set; } = new List<string>();
+}
+
 class Website
 {
     public List<GiftInfo> WebsiteList = new List<GiftInfo>();
@@ -722,12 +750,105 @@ class Website
         // Disable ASP.NET Core logging to keep console clean
         builder.Logging.ClearProviders();
         
-        // listen only on localhost to avoid exposing the service publicly
-        builder.WebHost.UseUrls("http://*:5000");
+        // listen on both ports - 5000 for viewer, 5001 for admin
+        builder.WebHost.UseUrls("http://*:5000", "http://*:5001");
 
         var app = builder.Build();
 
         app.UseCors(policy => policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
+
+        // Admin API endpoint - Get product info from URL
+        app.MapPost("/api/product-info", async (ProductInfoRequest request) =>
+        {
+            try
+            {
+                var (productName, price, isManualPrice) = await ProductInformation.GetProductInfoAsync(request.Url);
+                return Results.Json(new ProductInfoResponse 
+                { 
+                    ProductName = productName, 
+                    Price = price, 
+                    IsManualPrice = isManualPrice 
+                });
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem($"Error fetching product info: {ex.Message}");
+            }
+        });
+
+        // Admin API endpoint - Add gift to list
+        app.MapPost("/api/add-gift", async (AddGiftRequest request) =>
+        {
+            try
+            {
+                string fileName = request.Person.ToLower() switch
+                {
+                    "rud" => "Rudgifts.txt",
+                    "katrine" => "Katrinegifts.txt",
+                    "jannic" => "Jannicgifts.txt",
+                    "hjalte" => "Hjaltegifts.txt",
+                    _ => throw new ArgumentException("Invalid person name")
+                };
+
+                string userDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                string appDataPath = Path.Combine(userDir, "JulegaveListe", fileName);
+                
+                var storage = new FileStorage(appDataPath);
+                var list = await storage.LoadAsync();
+                
+                var newGift = new GiftInfo(
+                    request.ProductName,
+                    request.Price,
+                    request.Url,
+                    null,
+                    DateTime.Now,
+                    null,
+                    request.IsManualPrice
+                );
+                
+                list.Add(newGift);
+                await storage.SaveAllAsync(list);
+                
+                return Results.Ok(new { success = true, message = "Gift added successfully" });
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem($"Error adding gift: {ex.Message}");
+            }
+        });
+
+        // Admin API endpoint - Remove gifts from list
+        app.MapPost("/api/remove-gifts", async (RemoveGiftsRequest request) =>
+        {
+            try
+            {
+                string fileName = request.Person.ToLower() switch
+                {
+                    "rud" => "Rudgifts.txt",
+                    "katrine" => "Katrinegifts.txt",
+                    "jannic" => "Jannicgifts.txt",
+                    "hjalte" => "Hjaltegifts.txt",
+                    _ => throw new ArgumentException("Invalid person name")
+                };
+
+                string userDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                string appDataPath = Path.Combine(userDir, "JulegaveListe", fileName);
+                
+                var storage = new FileStorage(appDataPath);
+                var list = await storage.LoadAsync();
+                
+                // Remove items that match the URLs
+                list.RemoveAll(g => request.Urls.Contains(g.URl));
+                
+                await storage.SaveAllAsync(list);
+                
+                return Results.Ok(new { success = true, message = $"Removed {request.Urls.Count} gift(s)" });
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem($"Error removing gifts: {ex.Message}");
+            }
+        });
 
         app.MapGet("/gifts/{person}", async (string person) =>
         {
@@ -788,9 +909,15 @@ class Website
             return Results.Json(all);
         });
 
-        // Serve the website.html file at the root if present so visiting http://localhost:5000/ shows the web UI.
-        app.MapGet("/", async () =>
+        // Serve the website.html file at the root on port 5000
+        app.MapGet("/", async (HttpContext context) =>
         {
+            // On port 5001, redirect to /admin
+            if (context.Request.Host.Port == 5001)
+            {
+                return Results.Redirect("/admin");
+            }
+
             // Try several likely locations for website.html (project root when running from IDE, current dir when published, and a known workspace path).
             var candidates = new[]
             {
@@ -822,544 +949,47 @@ class Website
             return Results.Text("JulegaveListe API running. Endpoints: /gifts and /gifts/{person} (rud,katrine,jannic,hjalte).\nNote: website.html not found on disk.");
         });
 
+        // Serve the admin.html file at /admin route
+        app.MapGet("/admin", async (HttpContext context) =>
+        {
+            var candidates = new[]
+            {
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "admin.html")),
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "admin.html")),
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "admin.html")),
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "admin.html")),
+                Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "admin.html")),
+                Path.GetFullPath(@"\Julegave\admin.html")
+            };
+
+            foreach (var p in candidates)
+            {
+                try
+                {
+                    if (File.Exists(p))
+                    {
+                        var bytes = await File.ReadAllBytesAsync(p);
+                        return Results.File(bytes, "text/html");
+                    }
+                }
+                catch { }
+            }
+
+            return Results.Text("Admin interface not found. Place admin.html in the project directory.");
+        });
+
         await app.RunAsync();
     }
     static async Task Main(string[] args)
     {
-        // start the simple API in background FIRST before any prompts
-        _ = StartApiAsync();
-        
-        // Give the API a moment to start
-        await Task.Delay(500);
-        
-        Console.WriteLine("Started local API at http://localhost:5000 (for website to fetch lists)");
-        Console.WriteLine("Open http://localhost:5000 in your browser to view the gift lists.");
+        Console.WriteLine("Starting Julegave API Server...");
+        Console.WriteLine("=================================");
+        Console.WriteLine("Viewer:  http://localhost:5000");
+        Console.WriteLine("Admin:   http://localhost:5001/admin");
+        Console.WriteLine("=================================");
         Console.WriteLine("Background price updates enabled (every 12 hours)");
-        Console.WriteLine("\nConsole menu available. API continues running in background.\n");
-
-        var website = new Website();
-
-        while (true)
-        {
-            Console.Clear();
-            Console.WriteLine("API running at http://localhost:5000\n");
-            Console.WriteLine("1: Add To List \n2: Remove In List \n3: Manual Update \n4: Switch to Daemon Mode \n5: Edit Item");
-            string? input = Console.ReadLine();
-
-            // If there's no console attached (e.g., running inside a container without stdin),
-            // Console.ReadLine() returns null. In that case keep the process alive and let the
-            // background API serve requests until the container is stopped.
-            if (input is null)
-            {
-                Console.WriteLine("No console input available. Running API only; container will keep running until stopped.");
-                await Task.Delay(Timeout.Infinite);
-            }
-            if (input == "4")
-            {
-                Console.Clear();
-                Console.WriteLine("Starting daemon mode...");
-                Console.WriteLine("\nThe program will now run in the background.");
-                Console.WriteLine("API: http://localhost:5000");
-                Console.WriteLine("Price updates: Every 12 hours");
-                Console.WriteLine("\nPress any key to start daemon mode...");
-                Console.ReadKey(true);
-                
-                // Detach from terminal and run as daemon
-                if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
-                {
-                    // Close standard input/output/error to detach from terminal
-                    Console.WriteLine("\n[Daemon Mode] Running in background. Logging to syslog.");
-                    Console.WriteLine("To stop: kill $(pgrep -f JulegaveListe) or systemctl stop julegave");
-                    
-                    // Redirect console output to /dev/null or log file
-                    var logPath = "/var/log/julegaveliste.log";
-                    try
-                    {
-                        // Try to write to system log location
-                        if (Directory.Exists("/var/log"))
-                        {
-                            File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Daemon mode started\n");
-                            Console.SetOut(new StreamWriter(logPath, true) { AutoFlush = true });
-                            Console.SetError(new StreamWriter(logPath, true) { AutoFlush = true });
-                        }
-                    }
-                    catch
-                    {
-                        // Fall back to user's home directory
-                        var homePath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-                        logPath = Path.Combine(homePath, ".julegaveliste.log");
-                        File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Daemon mode started\n");
-                        Console.SetOut(new StreamWriter(logPath, true) { AutoFlush = true });
-                        Console.SetError(new StreamWriter(logPath, true) { AutoFlush = true });
-                    }
-                    
-                    // Suppress console input
-                    Console.SetIn(new StreamReader(Stream.Null));
-                }
-                else if (OperatingSystem.IsWindows())
-                {
-                    // Hide the console window on Windows
-                    var handle = NativeMethods.GetConsoleWindow();
-                    NativeMethods.ShowWindow(handle, 0); // 0 = SW_HIDE
-                }
-                
-                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Daemon mode active - API running on http://localhost:5000");
-                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Background price updates enabled (every 12 hours)");
-                
-                // Run indefinitely in background as a daemon
-                await Task.Delay(Timeout.Infinite);
-            }
-            else if (input == "1")
-            {
-                Console.Clear();
-                Console.WriteLine("Hvem skal der tilføjes til? \n 1: Jannic \n 2: Katrine \n 3: Rud \n 4: Hjalte");
-                string? person = Console.ReadLine();
-                if (person == "1") 
-                {
-                    Console.Clear();
-                    await website.ShowGiftList(@"\Jannicgifts.txt");
-                    await website.AddWebsite(@"\Jannicgifts.txt");
-
-                }
-                else if (person == "2")
-                {
-                    Console.Clear();
-                    await website.ShowGiftList(@"\Katrinegifts.txt");
-                    await website.AddWebsite(@"\Katrinegifts.txt");
-                }
-                else if (person == "3")
-                {
-                    Console.Clear();
-                    await website.ShowGiftList(@"\Rudgifts.txt");
-                    await website.AddWebsite(@"\Rudgifts.txt");
-                }
-                else if (person == "4")
-                {
-                    Console.Clear();
-                    await website.ShowGiftList(@"\Hjaltegifts.txt");
-                    await website.AddWebsite(@"\Hjaltegifts.txt");
-                }
-                else
-                {
-                    return;
-                }
-            }
-            else if (input == "2")
-            {
-                Console.Clear();
-                Console.WriteLine("Hvem skal der fjernes fra? \n 1: Jannic \n 2: Katrine \n 3: Rud \n 4: Hjalte");
-                string? person = Console.ReadLine();
-                if (person == "1")
-                {
-                    Console.Clear();
-                    await website.ShowGiftList(@"\Jannicgifts.txt");
-                    await website.RemoveEntryAsync(@"\Jannicgifts.txt");
-                }
-                else if (person == "2")
-                {
-                    Console.Clear();
-                    await website.ShowGiftList(@"\Katrinegifts.txt");
-                    await website.RemoveEntryAsync(@"\Katrinegifts.txt");
-                }
-                else if (person == "3")
-                {
-                    Console.Clear();
-                    await website.ShowGiftList(@"\Rudgifts.txt");
-                    await website.RemoveEntryAsync(@"\Rudgifts.txt");
-                }
-                else if (person == "4")
-                {
-                    Console.Clear();
-                    await website.ShowGiftList(@"\Hjaltegifts.txt");
-                    await website.RemoveEntryAsync(@"\Hjaltegifts.txt");
-                }
-                else
-                {
-                    return;
-                }
-            }
-            else if (input == "3")
-            {
-                await website.UpdatePris();
-            }
-            else if (input == "5")
-            {
-                Console.Clear();
-                Console.WriteLine("Which list to edit? \n 1: Jannic \n 2: Katrine \n 3: Rud \n 4: Hjalte");
-                string? person = Console.ReadLine();
-                if (person == "1")
-                {
-                    Console.Clear();
-                    await website.ShowGiftList(@"\Jannicgifts.txt");
-                    await website.EditItem(@"\Jannicgifts.txt");
-                }
-                else if (person == "2")
-                {
-                    Console.Clear();
-                    await website.ShowGiftList(@"\Katrinegifts.txt");
-                    await website.EditItem(@"\Katrinegifts.txt");
-                }
-                else if (person == "3")
-                {
-                    Console.Clear();
-                    await website.ShowGiftList(@"\Rudgifts.txt");
-                    await website.EditItem(@"\Rudgifts.txt");
-                }
-                else if (person == "4")
-                {
-                    Console.Clear();
-                    await website.ShowGiftList(@"\Hjaltegifts.txt");
-                    await website.EditItem(@"\Hjaltegifts.txt");
-                }
-                else
-                {
-                    return;
-                }
-            }
-            else
-            {
-                return;
-            }
-        }
-    }
-    public async Task EditItem(string FileLocation)
-    {
-        var storage = new FileStorage(FileLocation);
-        var list = await storage.LoadAsync();
-
-        if (list.Count == 0)
-        {
-            Console.WriteLine("No entries to edit.");
-            return;
-        }
-
-        // Show items with indexes
-        Console.WriteLine("\nSelect item to edit:");
-        for (int i = 0; i < list.Count; i++)
-        {
-            var g = list[i];
-            Console.WriteLine($"{i + 1}: {g.Produkt} | {g.Price} kr | {g.URl}");
-        }
-
-        Console.WriteLine();
-        Console.Write("Enter item number: ");
-        string? input = Console.ReadLine();
+        Console.WriteLine("\nPress Ctrl+C to stop the server.\n");
         
-        if (!int.TryParse(input?.Trim(), out int idx) || idx < 1 || idx > list.Count)
-        {
-            Console.WriteLine("Invalid selection.");
-            return;
-        }
-
-        var item = list[idx - 1];
-        Console.WriteLine($"\nEditing: {item.Produkt}");
-        Console.WriteLine("\nWhat to edit?");
-        Console.WriteLine("1: Product Name");
-        Console.WriteLine("2: Price");
-        Console.WriteLine("3: Both");
-        Console.Write("Choice: ");
-        
-        string? choice = Console.ReadLine();
-        bool updated = false;
-
-        if (choice == "1" || choice == "3")
-        {
-            Console.Write($"\nCurrent name: {item.Produkt}");
-            Console.Write("\nNew name (leave empty to keep current): ");
-            string? newName = Console.ReadLine();
-            if (!string.IsNullOrWhiteSpace(newName))
-            {
-                item.Produkt = newName;
-                updated = true;
-                Console.WriteLine("✓ Name updated");
-            }
-        }
-
-        if (choice == "2" || choice == "3")
-        {
-            Console.Write($"\nCurrent price: {item.Price} kr");
-            Console.Write("\nNew price (leave empty to keep current): ");
-            string? priceInput = Console.ReadLine();
-            if (!string.IsNullOrWhiteSpace(priceInput) && float.TryParse(priceInput, NumberStyles.Any, CultureInfo.InvariantCulture, out float newPrice))
-            {
-                item.Price = newPrice;
-                item.IsManualPrice = true; // Mark as manual since user set it
-                updated = true;
-                Console.WriteLine("✓ Price updated (marked as manual)");
-            }
-        }
-
-        if (updated)
-        {
-            await storage.SaveAllAsync(list);
-            WebsiteList = list;
-            Console.WriteLine("\n✓ Changes saved successfully");
-        }
-        else
-        {
-            Console.WriteLine("\nNo changes made.");
-        }
-
-        Console.WriteLine("\nPress any key to continue...");
-        Console.ReadKey(true);
-    }
-
-    public async Task RemoveEntryAsync(string FileLocation)
-    {
-        var storage = new FileStorage(FileLocation);
-        var list = await storage.LoadAsync();
-
-        if (list.Count == 0)
-        {
-            Console.WriteLine("No entries to remove.");
-            return;
-        }
-
-        // show items with indexes
-        for (int i = 0; i < list.Count; i++)
-        {
-            var g = list[i];
-            Console.WriteLine($"{i + 1}: {g.Produkt} | {g.Price} kr | {g.URl}");
-        }
-
-        Console.WriteLine();
-        Console.WriteLine("Enter index, product name or URL to remove (leave empty to cancel):");
-        string? input = Console.ReadLine();
-        if (string.IsNullOrWhiteSpace(input))
-        {
-            Console.WriteLine("Canceled.");
-            return;
-        }
-
-        // try index
-        if (int.TryParse(input.Trim(), out int idx))
-        {
-            if (idx >= 1 && idx <= list.Count)
-            {
-                var removed = list[idx - 1];
-                list.RemoveAt(idx - 1);
-                await storage.SaveAllAsync(list);
-                WebsiteList = list;
-                Console.WriteLine($"Removed entry #{idx}: {removed.Produkt}");
-                return;
-            }
-        }
-
-        // try exact product or url match (case-insensitive)
-        int foundIndex = list.FindIndex(g => string.Equals(g.Produkt, input, StringComparison.OrdinalIgnoreCase)
-                                         || string.Equals(g.URl, input, StringComparison.OrdinalIgnoreCase));
-
-        if (foundIndex >= 0)
-        {
-            var removed = list[foundIndex];
-            list.RemoveAt(foundIndex);
-            await storage.SaveAllAsync(list);
-            WebsiteList = list;
-            Console.WriteLine($"Removed: {removed.Produkt}");
-            return;
-        }
-
-        // try partial matches (product contains or url contains)
-        var partialMatches = new List<(int Index, GiftInfo Item)>();
-        for (int i = 0; i < list.Count; i++)
-        {
-            var g = list[i];
-            if ((!string.IsNullOrEmpty(g.Produkt) && g.Produkt.IndexOf(input, StringComparison.OrdinalIgnoreCase) >= 0) ||
-                (!string.IsNullOrEmpty(g.URl) && g.URl.IndexOf(input, StringComparison.OrdinalIgnoreCase) >= 0))
-            {
-                partialMatches.Add((i, g));
-            }
-        }
-
-        if (partialMatches.Count == 0)
-        {
-            Console.WriteLine("No matching entry found.");
-            return;
-        }
-
-        if (partialMatches.Count == 1)
-        {
-            var (i, g) = partialMatches[0];
-            list.RemoveAt(i);
-            await storage.SaveAllAsync(list);
-            WebsiteList = list;
-            Console.WriteLine($"Removed: {g.Produkt}");
-            return;
-        }
-
-        // multiple partial matches -> ask user to pick one
-        Console.WriteLine("Multiple matches found, choose number to remove:");
-        for (int m = 0; m < partialMatches.Count; m++)
-        {
-            var (i, g) = partialMatches[m];
-            Console.WriteLine($"{m + 1}: {g.Produkt} | {g.Price} kr | {g.URl}");
-        }
-
-        string? pick = Console.ReadLine();
-        if (int.TryParse(pick, out int p) && p >= 1 && p <= partialMatches.Count)
-        {
-            var toRemove = partialMatches[p - 1];
-            list.RemoveAt(toRemove.Index);
-            await storage.SaveAllAsync(list);
-            WebsiteList = list;
-            Console.WriteLine($"Removed: {toRemove.Item.Produkt}");
-            return;
-        }
-
-        Console.WriteLine("No removal made.");
-    }
-    public async Task ShowGiftList(string FileLocation)
-    {
-        var storage = new FileStorage(FileLocation);
-        var loaded = await storage.LoadAsync();
-
-        // update this instance so other operations see the loaded list
-        WebsiteList = loaded;
-
-        if (loaded.Count == 0)
-        {
-            Console.WriteLine("No gifts found.");
-            return;
-        }
-
-        foreach (var gift in loaded)
-        {
-            Console.WriteLine($"Produkt: {gift.Produkt}, Pris: {gift.Price} kr, URL: {gift.URl}");
-        }
-    }
-    public async Task AddWebsite(string FileLocation)
-    {
-        var storage = new FileStorage(FileLocation);
-
-        // load existing entries into this instance
-        WebsiteList = await storage.LoadAsync();
-
-        while (true)
-        {
-            Console.WriteLine("\nEnter product URL (or leave empty to stop):");
-            var url = Console.ReadLine();
-            if (string.IsNullOrWhiteSpace(url))
-            {
-                break;
-            }
-
-            try
-            {
-                // Fetch product info using browser automation
-                var (productName, price, isManualPrice) = await ProductInformation.GetProductInfoAsync(url);
-                
-                // If price not found, ask user to enter it manually
-                if (isManualPrice || price == 0f)
-                {
-                    Console.WriteLine("\nCould not automatically detect price. Please enter price manually:");
-                    while (true)
-                    {
-                        Console.Write("Price (kr): ");
-                        var priceInput = Console.ReadLine();
-                        if (float.TryParse(priceInput, NumberStyles.Any, CultureInfo.InvariantCulture, out float manualPrice) && manualPrice >= 0)
-                        {
-                            price = manualPrice;
-                            isManualPrice = true;
-                            break;
-                        }
-                        Console.WriteLine("Invalid price. Please enter a valid number.");
-                    }
-                }
-                
-                var gift = new GiftInfo(
-                    productName,
-                    price,
-                    url,
-                    string.Empty,  // No PriceRunner ID
-                    DateTime.Now,
-                    string.Empty,  // No shop name
-                    isManualPrice
-                );
-
-                WebsiteList.Add(gift);
-                await storage.AppendAsync(gift);
-                Console.WriteLine($"Added: {gift.Produkt} — {gift.Price} kr{(isManualPrice ? " (manual price)" : "")}");
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"Failed to fetch product: {ex.Message}");
-            }
-        }
-    }
-    public async Task UpdatePris()
-    {
-        string[] files =
-        {
-            @"C:\Jannicgifts.txt",
-            @"C:\Katrinegifts.txt",
-            @"C:\Rudgifts.txt",
-            @"C:\Hjaltegifts.txt"
-        };
-
-        foreach (var file in files)
-        {
-            await UpdateFileAsync(file);
-        }
-    }
-    private async Task UpdateFileAsync(string filePath)
-    {
-        var storage = new FileStorage(filePath);
-        var list = await storage.LoadAsync();
-
-        if (list.Count == 0)
-        {
-            Console.WriteLine($"No entries found in {filePath}.");
-            return;
-        }
-
-        bool anyChanged = false;
-        for (int i = 0; i < list.Count; i++)
-        {
-            var item = list[i];
-            
-            // Skip if no URL
-            if (string.IsNullOrWhiteSpace(item.URl))
-            {
-                Console.WriteLine($"Skipping entry without URL at index {i} in {filePath}.");
-                continue;
-            }
-
-            try
-            {
-                // Skip items with manually set prices
-                if (item.IsManualPrice)
-                {
-                    Console.WriteLine($"Skipping '{item.Produkt}' (manual price)");
-                    continue;
-                }
-                
-                // Use browser automation for all URLs
-                var (scrapedName, scrapedPrice, _) = await ProductInformation.GetProductInfoAsync(item.URl);
-
-                // update name and price if they changed
-                if (scrapedName != item.Produkt) item.Produkt = scrapedName;
-                if (Math.Abs(scrapedPrice - item.Price) > 0.0001f)
-                {
-                    Console.WriteLine($"Price updated for {item.Produkt}: {item.Price} kr -> {scrapedPrice} kr");
-                    item.Price = scrapedPrice;
-                    anyChanged = true;
-                }
-                item.LastPriceUpdate = DateTime.Now;
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"Failed to update URL '{item.URl}' in {filePath}: {ex.Message}");
-            }
-        }
-
-        if (anyChanged)
-        {
-            await storage.SaveAllAsync(list);
-            Console.WriteLine($"Saved updates to {filePath} ({list.Count} entries).");
-        }
-        else
-        {
-            Console.WriteLine($"No price changes detected for {filePath}.");
-        }
+        await StartApiAsync();
     }
 }

@@ -5,32 +5,173 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Julegaver ønsker 2025</title>
     <style>
-        body{font-family:Segoe UI, Roboto, Arial, sans-serif; padding:1rem; line-height:1.4}
-        header h1{margin:0 0 1rem}
-        #controls{margin:0 0 1rem; display:flex; gap:.5rem}
-        #controls button{padding:.5rem .75rem; border:1px solid #777; background:#f3f3f3; cursor:pointer; border-radius:6px}
-        #controls button.active{background:#0b6; color:white; border-color:#097}
-        #gift-list{list-style:disc inside; padding:0; margin:0}
-        #gift-list li{padding:.25rem 0}
-        .note{color:#555; font-size:.95rem; margin-top:.75rem}
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 800px;
+            width: 100%;
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        h1 {
+            color: #667eea;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+
+        #controls {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 30px;
+        }
+
+        #controls button {
+            padding: 15px 30px;
+            font-size: 1.1em;
+            border: 2px solid #e0e0e0;
+            background: white;
+            color: #333;
+            cursor: pointer;
+            border-radius: 10px;
+            transition: all 0.3s ease;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        #controls button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        #controls button.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        #gift-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        #gift-list li {
+            padding: 15px;
+            margin-bottom: 10px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            transition: all 0.3s ease;
+        }
+
+        #gift-list li:hover {
+            background: #e9ecef;
+            transform: translateX(5px);
+        }
+
+        #gift-list li a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+            transition: color 0.3s ease;
+        }
+
+        #gift-list li a:hover {
+            color: #764ba2;
+            text-decoration: underline;
+        }
+
+        #gift-list li em {
+            color: #6c757d;
+            font-style: normal;
+        }
+
+        .note {
+            text-align: center;
+            padding: 20px;
+            color: #6c757d;
+            font-size: 1.1em;
+            font-style: italic;
+        }
+
+        .manual-price-badge {
+            display: inline-block;
+            background: #ff6600;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+
+        .price {
+            color: #667eea;
+            font-weight: bold;
+            margin-left: 5px;
+        }
+
+        .shop-name {
+            color: #6c757d;
+            font-style: italic;
+            font-size: 0.95em;
+            margin-left: 5px;
+        }
     </style>
 </head>
 <body>
-    <header>
-        <h1>Julegaver ønsker 2025</h1>
-    </header>
+    <div class="container">
+        <header>
+            <h1>🎄 Julegaver ønsker 2025</h1>
+        </header>
 
-    <div id="controls" aria-label="Velg person">
-        <button data-person="rud">Rud</button>
-        <button data-person="katrine">Katrine</button>
-        <button data-person="jannic">Jannic</button>
-        <button data-person="hjalte">Hjalte</button>
+        <div id="controls" aria-label="Velg person">
+            <button data-person="rud">Rud</button>
+            <button data-person="katrine">Katrine</button>
+            <button data-person="jannic">Jannic</button>
+            <button data-person="hjalte">Hjalte</button>
+        </div>
+
+        <section>
+            <ul id="gift-list" aria-live="polite"></ul>
+            <p class="note">Trykk en knapp for å se ønskelisten for den personen.</p>
+        </section>
     </div>
-
-    <section>
-        <ul id="gift-list" aria-live="polite"></ul>
-        <p class="note">Trykk en knapp for å se ønskelisten for den personen.</p>
-    </section>
 
     <script>
             // Fetch lists from the local API started by the console app.
@@ -91,9 +232,9 @@
                                                 const shopName = getShopName(i);
                                                 const isManualPrice = getIsManualPrice(i);
                                                 const titleHtml = escapeHtml(produkt || 'Ukjent produkt');
-                                                const priceHtml = price ? ' — ' + escapeHtml(String(price)) + ' kr' : '';
-                                                const shopHtml = shopName ? ' <em>(fra ' + escapeHtml(shopName) + ')</em>' : '';
-                                                const manualPriceNote = isManualPrice ? ' <span style="color:#f60;font-size:.9em">[manuell pris - oppdateres ikke]</span>' : '';
+                                                const priceHtml = price ? '<span class="price"> — ' + escapeHtml(String(price)) + ' kr</span>' : '';
+                                                const shopHtml = shopName ? '<span class="shop-name"> (fra ' + escapeHtml(shopName) + ')</span>' : '';
+                                                const manualPriceNote = isManualPrice ? '<span class="manual-price-badge">manuell pris</span>' : '';
 
                                                 if (url) {
                                                     // render product name as a clickable link
