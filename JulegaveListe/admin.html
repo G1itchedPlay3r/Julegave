@@ -391,7 +391,7 @@
             showLoading(true);
 
             try {
-                const response = await fetch(`${API_URL}/api/product-info`, {
+                const response = await fetch(`/api/product-info`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -400,7 +400,8 @@
                 });
 
                 if (!response.ok) {
-                    throw new Error('Kunne ikke hente produkt information');
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
                 }
 
                 const data = await response.json();
@@ -444,7 +445,7 @@
             showLoading(true);
 
             try {
-                const response = await fetch(`${API_URL}/api/add-gift`, {
+                const response = await fetch(`/api/add-gift`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -459,7 +460,8 @@
                 });
 
                 if (!response.ok) {
-                    throw new Error('Kunne ikke tilføje gave');
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
                 }
 
                 showMessage('✓ Gave tilføjet!', 'success');
@@ -556,7 +558,7 @@
             showLoading(true);
 
             try {
-                const response = await fetch(`${API_URL}/api/remove-gifts`, {
+                const response = await fetch(`/api/remove-gifts`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -568,7 +570,8 @@
                 });
 
                 if (!response.ok) {
-                    throw new Error('Kunne ikke fjerne gaver');
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
                 }
 
                 showMessage(`✓ ${urls.length} gave(r) fjernet!`, 'success');
