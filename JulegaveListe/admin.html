@@ -333,7 +333,7 @@
     </div>
 
     <script>
-        const API_URL = 'http://localhost:5001';
+        const API_URL = '/api';
         let isManualPrice = false;
 
         function showAddForm() {
@@ -497,7 +497,7 @@
             showLoading(true);
 
             try {
-                const response = await fetch(`http://localhost:5000/gifts/${person}`);
+                const response = await fetch(`/gifts/${person}`);
                 
                 if (!response.ok) {
                     throw new Error('Kunne ikke hente gaver');

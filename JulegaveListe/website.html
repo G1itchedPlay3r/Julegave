@@ -191,7 +191,7 @@
             async function fetchAndRender(personKey){
                 listEl.innerHTML = '<li><em>Laster...</em></li>';
                 try{
-                    const resp = await fetch('http://localhost:5000/gifts/' + encodeURIComponent(personKey));
+                    const resp = await fetch('/gifts/' + encodeURIComponent(personKey));
                     if(!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
                         const data = await resp.json();
                         console.log('Fetched gifts for', personKey, data);
