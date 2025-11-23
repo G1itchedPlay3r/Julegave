@@ -926,6 +926,7 @@ class Website
                 Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "website.html")),
                 Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "website.html")),
                 Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "website.html")),
+                @"c:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\website.html",
                 // fallback explicit workspace path used in this project
                 Path.GetFullPath(@"\Julegave\website.html")
             };
@@ -959,6 +960,7 @@ class Website
                 Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "admin.html")),
                 Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "admin.html")),
                 Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "admin.html")),
+                @"c:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\admin.html",
                 Path.GetFullPath(@"\Julegave\admin.html")
             };
 
