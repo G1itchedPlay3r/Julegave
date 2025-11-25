@@ -152,25 +152,6 @@
             font-size: 0.95em;
             margin-left: 5px;
         }
-
-        .favorite-star {
-            color: #ffc107;
-            font-size: 1.2em;
-            margin-left: 8px;
-            vertical-align: middle;
-        }
-
-        .product-info {
-            color: #6c757d;
-            font-size: 0.9em;
-            margin-top: 5px;
-            padding-left: 0;
-        }
-
-        #gift-list li.favorite {
-            background: #fff9e6;
-            border-left-color: #ffc107;
-        }
     </style>
 </head>
 <body>
@@ -232,68 +213,36 @@
                                             };
 
                                             const getUrl = (obj) => {
-                                                return getString(obj, 'url', 'urL', 'URl', 'Url', 'URL', 'uRl');
+                                                return getString(obj, 'URl', 'Url', 'URL', 'url', 'uRl');
                                             };
 
                                             const getShopName = (obj) => {
-                                                return getString(obj, 'shopName', 'ShopName', 'Shopname');
+                                                return getString(obj, 'ShopName', 'shopName', 'Shopname');
                                             };
 
                                             const getIsManualPrice = (obj) => {
-                                                const val = obj.isManualPrice ?? obj.IsManualPrice ?? false;
+                                                const val = obj.IsManualPrice ?? obj.isManualPrice ?? false;
                                                 return val === true || val === 'true' || val === 'True';
                                             };
 
-                                            const getIsFavorite = (obj) => {
-                                                const val = obj.isFavorite ?? obj.IsFavorite;
-                                                // Handle undefined, null, or missing values as false
-                                                if (val === undefined || val === null) return false;
-                                                return val === true || val === 'true' || val === 'True';
-                                            };
-
-                                            const getProductInfo = (obj) => {
-                                                return getString(obj, 'productInfo', 'ProductInfo');
-                                            };
-
-                                            // Debug: Log the data to see what we're getting
-                                            console.log('Gifts data:', data);
-                                            data.forEach((gift, index) => {
-                                                console.log(`Gift ${index}: isFavorite=${gift.isFavorite}, IsFavorite=${gift.IsFavorite}`);
-                                            });
-
-                                            // Sort: favorites first
-                                            const sortedData = [...data].sort((a, b) => {
-                                                const aFav = getIsFavorite(a);
-                                                const bFav = getIsFavorite(b);
-                                                console.log(`Comparing: ${getString(a, 'produkt', 'Produkt')} (fav=${aFav}) vs ${getString(b, 'produkt', 'Produkt')} (fav=${bFav})`);
-                                                if (aFav && !bFav) return -1;
-                                                if (!aFav && bFav) return 1;
-                                                return 0;
-                                            });
-
-                                            listEl.innerHTML = sortedData.map(i => {
-                                                const produkt = getString(i, 'produkt', 'Produkt', 'product', 'Product', 'Name', 'name');
+                                            listEl.innerHTML = data.map(i => {
+                                                const produkt = getString(i, 'Produkt', 'produkt', 'Product', 'product', 'Name', 'name');
                                                 const price = getPrice(i);
                                                 const url = getUrl(i);
                                                 const shopName = getShopName(i);
                                                 const isManualPrice = getIsManualPrice(i);
-                                                const isFavorite = getIsFavorite(i);
-                                                const productInfo = getProductInfo(i);
                                                 const titleHtml = escapeHtml(produkt || 'Ukjent produkt');
                                                 const priceHtml = price ? '<span class="price"> — ' + escapeHtml(String(price)) + ' kr</span>' : '';
                                                 const shopHtml = shopName ? '<span class="shop-name"> (fra ' + escapeHtml(shopName) + ')</span>' : '';
                                                 const manualPriceNote = isManualPrice ? '<span class="manual-price-badge">manuell pris</span>' : '';
-                                                const favoriteStar = isFavorite ? '<span class="favorite-star">⭐</span>' : '';
-                                                const productInfoHtml = productInfo ? '<div class="product-info">📝 ' + escapeHtml(productInfo) + '</div>' : '';
-                                                const liClass = isFavorite ? 'class="favorite"' : '';
 
                                                 if (url) {
                                                     // render product name as a clickable link
                                                     const href = escapeHtml(url);
-                                                    return `<li ${liClass}><a href="${href}" target="_blank" rel="noopener noreferrer">${titleHtml}</a>${priceHtml}${shopHtml}${manualPriceNote}${favoriteStar}${productInfoHtml}</li>`;
+                                                    return `<li><a href="${href}" target="_blank" rel="noopener noreferrer">${titleHtml}</a>${priceHtml}${shopHtml}${manualPriceNote}</li>`;
                                                 }
 
-                                                return `<li ${liClass}>${titleHtml}${priceHtml}${shopHtml}${manualPriceNote}${favoriteStar}${productInfoHtml}</li>`;
+                                                return `<li>${titleHtml}${priceHtml}${shopHtml}${manualPriceNote}</li>`;
                                             }).join('');
                             }
                     buttons.forEach(b => b.classList.toggle('active', b.dataset.person === personKey));
