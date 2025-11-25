@@ -1,12 +1,19 @@
 {
   "version": 2,
-  "dgSpecHash": "LGfiwuosipo=",
+  "dgSpecHash": "wJt1JFPKX0c=",
   "success": true,
   "projectFilePath": "C:\\Users\\rud\\OneDrive\\Skrivebord\\Julegave-main\\JulegaveListe\\JulegaveListe\\JulegaveListe.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\rud\\.nuget\\packages\\htmlagilitypack\\1.12.4\\htmlagilitypack.1.12.4.nupkg.sha512",
+    "C:\\Users\\rud\\.nuget\\packages\\microsoft.data.sqlite\\10.0.0\\microsoft.data.sqlite.10.0.0.nupkg.sha512",
+    "C:\\Users\\rud\\.nuget\\packages\\microsoft.data.sqlite.core\\10.0.0\\microsoft.data.sqlite.core.10.0.0.nupkg.sha512",
     "C:\\Users\\rud\\.nuget\\packages\\selenium.webdriver\\4.26.1\\selenium.webdriver.4.26.1.nupkg.sha512",
-    "C:\\Users\\rud\\.nuget\\packages\\selenium.webdriver.chromedriver\\131.0.6778.8500\\selenium.webdriver.chromedriver.131.0.6778.8500.nupkg.sha512"
+    "C:\\Users\\rud\\.nuget\\packages\\selenium.webdriver.chromedriver\\131.0.6778.8500\\selenium.webdriver.chromedriver.131.0.6778.8500.nupkg.sha512",
+    "C:\\Users\\rud\\.nuget\\packages\\sqlitepclraw.bundle_e_sqlite3\\2.1.11\\sqlitepclraw.bundle_e_sqlite3.2.1.11.nupkg.sha512",
+    "C:\\Users\\rud\\.nuget\\packages\\sqlitepclraw.core\\2.1.11\\sqlitepclraw.core.2.1.11.nupkg.sha512",
+    "C:\\Users\\rud\\.nuget\\packages\\sqlitepclraw.lib.e_sqlite3\\2.1.11\\sqlitepclraw.lib.e_sqlite3.2.1.11.nupkg.sha512",
+    "C:\\Users\\rud\\.nuget\\packages\\sqlitepclraw.provider.e_sqlite3\\2.1.11\\sqlitepclraw.provider.e_sqlite3.2.1.11.nupkg.sha512",
+    "C:\\Users\\rud\\.nuget\\packages\\system.memory\\4.5.3\\system.memory.4.5.3.nupkg.sha512"
   ],
   "logs": []
 }

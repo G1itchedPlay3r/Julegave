@@ -152,6 +152,13 @@
             font-size: 0.95em;
             margin-left: 5px;
         }
+
+        .product-info {
+            color: #6c757d;
+            font-size: 0.9em;
+            margin-top: 5px;
+            padding-left: 0;
+        }
     </style>
 </head>
 <body>
@@ -198,6 +205,15 @@
                             if(!Array.isArray(data) || data.length === 0){
                                 listEl.innerHTML = '<li><em>Ingen ønsker registrert.</em></li>';
                             } else {
+                                // Sort gifts: favorites first, then regular gifts
+                                const sortedData = data.sort((a, b) => {
+                                    const aFav = a.isFavorite || a.IsFavorite || false;
+                                    const bFav = b.isFavorite || b.IsFavorite || false;
+                                    if (aFav && !bFav) return -1;
+                                    if (!aFav && bFav) return 1;
+                                    return 0;
+                                });
+                                
                                 // JSON produced by the .NET API may have PascalCase or camelCase property names depending on serializer settings.
                                 // Read properties in a case-tolerant way to avoid 'undefined' showing in the UI.
                                 const getString = (obj, ...keys) => {
@@ -213,36 +229,49 @@
                                             };
 
                                             const getUrl = (obj) => {
-                                                return getString(obj, 'URl', 'Url', 'URL', 'url', 'uRl');
+                                                return getString(obj, 'url', 'urL', 'URl', 'Url', 'URL', 'uRl');
                                             };
 
                                             const getShopName = (obj) => {
-                                                return getString(obj, 'ShopName', 'shopName', 'Shopname');
+                                                return getString(obj, 'shopName', 'ShopName', 'Shopname');
                                             };
 
                                             const getIsManualPrice = (obj) => {
-                                                const val = obj.IsManualPrice ?? obj.isManualPrice ?? false;
+                                                const val = obj.isManualPrice ?? obj.IsManualPrice ?? false;
                                                 return val === true || val === 'true' || val === 'True';
                                             };
 
-                                            listEl.innerHTML = data.map(i => {
-                                                const produkt = getString(i, 'Produkt', 'produkt', 'Product', 'product', 'Name', 'name');
+                                            const getProductInfo = (obj) => {
+                                                return getString(obj, 'productInfo', 'ProductInfo');
+                                            };
+
+                                            const getIsFavorite = (obj) => {
+                                                const val = obj.isFavorite ?? obj.IsFavorite ?? false;
+                                                return val === true || val === 'true' || val === 'True';
+                                            };
+
+                                            listEl.innerHTML = sortedData.map(i => {
+                                                const produkt = getString(i, 'produkt', 'Produkt', 'product', 'Product', 'Name', 'name');
                                                 const price = getPrice(i);
                                                 const url = getUrl(i);
                                                 const shopName = getShopName(i);
                                                 const isManualPrice = getIsManualPrice(i);
+                                                const productInfo = getProductInfo(i);
+                                                const isFavorite = getIsFavorite(i);
                                                 const titleHtml = escapeHtml(produkt || 'Ukjent produkt');
+                                                const favoriteIcon = isFavorite ? '⭐ ' : '';
                                                 const priceHtml = price ? '<span class="price"> — ' + escapeHtml(String(price)) + ' kr</span>' : '';
                                                 const shopHtml = shopName ? '<span class="shop-name"> (fra ' + escapeHtml(shopName) + ')</span>' : '';
                                                 const manualPriceNote = isManualPrice ? '<span class="manual-price-badge">manuell pris</span>' : '';
+                                                const productInfoHtml = productInfo ? '<div class="product-info">📝 ' + escapeHtml(productInfo) + '</div>' : '';
 
                                                 if (url) {
                                                     // render product name as a clickable link
                                                     const href = escapeHtml(url);
-                                                    return `<li><a href="${href}" target="_blank" rel="noopener noreferrer">${titleHtml}</a>${priceHtml}${shopHtml}${manualPriceNote}</li>`;
+                                                    return `<li><a href="${href}" target="_blank" rel="noopener noreferrer">${favoriteIcon}${titleHtml}</a>${priceHtml}${shopHtml}${manualPriceNote}${productInfoHtml}</li>`;
                                                 }
 
-                                                return `<li>${titleHtml}${priceHtml}${shopHtml}${manualPriceNote}</li>`;
+                                                return `<li>${favoriteIcon}${titleHtml}${priceHtml}${shopHtml}${manualPriceNote}${productInfoHtml}</li>`;
                                             }).join('');
                             }
                     buttons.forEach(b => b.classList.toggle('active', b.dataset.person === personKey));

@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Support.UI;
+using Microsoft.Data.Sqlite;
 
 // Windows API for hiding console window
 static class NativeMethods
@@ -32,6 +33,26 @@ class BrowserAutomation
     {
         lock (_lock)
         {
+            // Check if driver is valid, if not recreate it
+            if (_driver != null)
+            {
+                try
+                {
+                    // Test if session is still valid by checking multiple properties
+                    var _ = _driver.WindowHandles;
+                    var __ = _driver.CurrentWindowHandle;
+                    // If we can access these, session is valid
+                }
+                catch (Exception ex)
+                {
+                    // Session invalid (browser closed, session expired, etc.)
+                    Console.WriteLine($"⚠️  WebDriver session invalid ({ex.GetType().Name}), recreating...");
+                    try { _driver.Quit(); } catch { }
+                    try { _driver.Dispose(); } catch { }
+                    _driver = null;
+                }
+            }
+            
             if (_driver == null)
             {
                 try
@@ -166,55 +187,95 @@ class BrowserAutomation
 
     public static async Task<(string productName, float price, bool isManualPrice)> GetProductInfoWithBrowser(string url)
     {
-        var driver = GetDriver();
+        // Retry logic in case of session errors
+        Exception? lastException = null;
         
-        try
+        for (int attempt = 0; attempt < 3; attempt++)
         {
-            Console.WriteLine($"Loading page with browser...");
-            driver.Navigate().GoToUrl(url);
-            
-            // Wait for page to fully load (including JavaScript)
-            await Task.Delay(3000);
+            try
+            {
+                Console.WriteLine($"Attempt {attempt + 1}/3: Getting product info from {url}");
+                var driver = GetDriver();
+                
+                Console.WriteLine($"Loading page with browser...");
+                driver.Navigate().GoToUrl(url);
+                
+                // Wait for page to fully load (including JavaScript)
+                await Task.Delay(3000);
 
             // Try to find product name - prioritize common e-commerce patterns
             string productName = "Ukendt produkt";
+            
+            // First, try to get from page title (often most reliable)
+            try
+            {
+                string pageTitle = driver.Title;
+                if (!string.IsNullOrWhiteSpace(pageTitle) && !pageTitle.Equals("Forside", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Remove common suffixes like " - Proshop", " | Shop name", etc.
+                    var titleParts = pageTitle.Split(new[] { " - ", " | ", " | " }, StringSplitOptions.None);
+                    if (titleParts.Length > 0 && titleParts[0].Trim().Length > 5)
+                    {
+                        productName = titleParts[0].Trim();
+                        Console.WriteLine($"✓ Found name from title: {productName}");
+                        goto PriceSearch; // Skip other name searches if we found it
+                    }
+                }
+            }
+            catch { }
+            
             string[] nameSelectors = {
-                "[product-display-name]",  // Proshop
+                "h1[product-display-name]",  // Proshop specific
+                "[product-display-name]",  // Proshop attribute
                 "h1[itemprop='name']",  // Schema.org
-                "[itemprop='name']",  // Schema.org any element
                 "h1.product-name",
                 "h1.product-title",
                 ".product-name h1",
                 ".product-title h1",
-                "h1",  // Fallback to any h1
+                "h1.ProductPage_title",  // Some sites use this
+                ".ProductPage h1",  // Product page heading
+                "main h1",  // Main content h1
+                "article h1",  // Article heading
+                "[data-product-name]",  // Data attribute
             };
 
             foreach (var selector in nameSelectors)
             {
                 try
                 {
-                    var element = driver.FindElement(By.CssSelector(selector));
-                    
-                    // Try attribute first (Proshop uses this)
-                    string? attrName = element.GetAttribute("product-display-name");
-                    if (!string.IsNullOrWhiteSpace(attrName))
+                    var elements = driver.FindElements(By.CssSelector(selector));
+                    foreach (var element in elements)
                     {
-                        productName = attrName;
-                        Console.WriteLine($"✓ Found name: {productName}");
-                        break;
-                    }
-                    
-                    // Try text content
-                    string? text = element.Text?.Trim();
-                    if (!string.IsNullOrWhiteSpace(text))
-                    {
-                        productName = text;
-                        Console.WriteLine($"✓ Found name: {productName}");
-                        break;
+                        // Try attribute first (Proshop uses this)
+                        string? attrName = element.GetAttribute("product-display-name") ?? element.GetAttribute("data-product-name");
+                        if (!string.IsNullOrWhiteSpace(attrName) && !attrName.Equals("Forside", StringComparison.OrdinalIgnoreCase))
+                        {
+                            productName = attrName;
+                            Console.WriteLine($"✓ Found name from attribute: {productName}");
+                            goto PriceSearch;
+                        }
+                        
+                        // Try text content
+                        string? text = element.Text?.Trim();
+                        if (!string.IsNullOrWhiteSpace(text) && 
+                            !text.Equals("Forside", StringComparison.OrdinalIgnoreCase) && 
+                            text.Length > 5)
+                        {
+                            productName = text;
+                            Console.WriteLine($"✓ Found name from element: {productName}");
+                            goto PriceSearch;
+                        }
                     }
                 }
                 catch { continue; }
             }
+            
+            if (productName == "Ukendt produkt")
+            {
+                Console.WriteLine("⚠️  Could not find product name on page");
+            }
+
+            PriceSearch:
 
             // Try to find price - prioritize visible price elements
             float price = 0f;
@@ -255,17 +316,45 @@ class BrowserAutomation
                         if (match.Success)
                         {
                             string priceText = match.Groups[1].Value;
-                            // Normalize: ignore decimals (after comma or dot)
-                            // Split on comma or dot and only keep the part before it
+                            
+                            // Handle different formats:
+                            // Danish: "7.777,00" (dot = thousands, comma = decimal)
+                            // English: "7,777.00" (comma = thousands, dot = decimal)
+                            // We want to ignore decimals and keep whole number only
+                            
+                            // If there's a comma, check if it's followed by 2 digits (decimal separator)
                             if (priceText.Contains(","))
                             {
-                                priceText = priceText.Split(',')[0];
+                                var parts = priceText.Split(',');
+                                if (parts.Length > 1 && parts[1].Length <= 2)
+                                {
+                                    // Danish format: comma is decimal separator, ignore it
+                                    priceText = parts[0];
+                                }
+                                else
+                                {
+                                    // Comma is thousands separator, keep all
+                                    priceText = priceText.Replace(",", "");
+                                }
                             }
+                            
+                            // If there's a dot, check if it's followed by 2 digits (decimal separator)
                             if (priceText.Contains("."))
                             {
-                                priceText = priceText.Split('.')[0];
+                                var parts = priceText.Split('.');
+                                if (parts.Length > 1 && parts[1].Length <= 2)
+                                {
+                                    // Dot is decimal separator (English format), ignore decimals
+                                    priceText = parts[0];
+                                }
+                                else
+                                {
+                                    // Dot is thousands separator (Danish format), remove it
+                                    priceText = priceText.Replace(".", "");
+                                }
                             }
-                            priceText = priceText.Replace(" ", "");
+                            
+                            priceText = priceText.Replace(" ", "").Trim();
                             
                             if (float.TryParse(priceText, NumberStyles.Any, CultureInfo.InvariantCulture, out float parsedPrice))
                             {
@@ -291,12 +380,33 @@ class BrowserAutomation
             }
 
             return (productName, price, isManualPrice);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ Browser error (attempt {attempt + 1}/3): {ex.Message}");
+                lastException = ex;
+                
+                // Force driver recreation on error
+                lock (_lock)
+                {
+                    if (_driver != null)
+                    {
+                        try { _driver.Quit(); } catch { }
+                        try { _driver.Dispose(); } catch { }
+                        _driver = null;
+                    }
+                }
+                
+                if (attempt < 2)
+                {
+                    // Wait before retry
+                    await Task.Delay(2000);
+                }
+            }
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"❌ Browser error: {ex.Message}");
-            throw;
-        }
+        
+        // All attempts failed
+        throw new Exception($"Failed to get product info after 3 attempts. Last error: {lastException?.Message ?? "Unknown"}");
     }
 }
 class ProductInformation 
@@ -336,6 +446,191 @@ class ProductInformation
         return await BrowserAutomation.GetProductInfoWithBrowser(url);
     }
 }
+class DatabaseStorage
+{
+    private readonly string _dbPath;
+    private readonly string _person;
+
+    public DatabaseStorage(string person)
+    {
+        if (string.IsNullOrWhiteSpace(person)) throw new ArgumentNullException(nameof(person));
+        _person = person.ToLowerInvariant();
+        
+        // Store database in AppData
+        string appDataDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "JulegaveListe"
+        );
+        Directory.CreateDirectory(appDataDir);
+        _dbPath = Path.Combine(appDataDir, "gifts.db");
+        
+        InitializeDatabase();
+    }
+
+    private void InitializeDatabase()
+    {
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        connection.Open();
+
+        var command = connection.CreateCommand();
+        command.CommandText = @"
+            CREATE TABLE IF NOT EXISTS gifts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                person TEXT NOT NULL,
+                produkt TEXT NOT NULL,
+                price REAL NOT NULL,
+                url TEXT NOT NULL,
+                priceRunnerProductId TEXT NOT NULL DEFAULT '',
+                lastPriceUpdate TEXT NOT NULL DEFAULT '',
+                shopName TEXT NOT NULL DEFAULT '',
+                isManualPrice INTEGER NOT NULL DEFAULT 0,
+                productInfo TEXT NOT NULL DEFAULT '',
+                isFavorite INTEGER NOT NULL DEFAULT 0
+            )";
+        command.ExecuteNonQuery();
+
+        // Create index for faster person lookups
+        command.CommandText = @"CREATE INDEX IF NOT EXISTS idx_person ON gifts(person)";
+        command.ExecuteNonQuery();
+    }
+
+    public async Task<List<GiftInfo>> LoadAsync()
+    {
+        var list = new List<GiftInfo>();
+
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+
+        var command = connection.CreateCommand();
+        command.CommandText = @"
+            SELECT produkt, price, url, priceRunnerProductId, lastPriceUpdate, 
+                   shopName, isManualPrice, productInfo, isFavorite
+            FROM gifts 
+            WHERE person = $person";
+        command.Parameters.AddWithValue("$person", _person);
+
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var produkt = reader.GetString(0);
+            var price = (float)reader.GetDouble(1);
+            var url = reader.GetString(2);
+            var priceRunnerProductId = reader.GetString(3);
+            var lastPriceUpdateStr = reader.GetString(4);
+            var shopName = reader.GetString(5);
+            var isManualPrice = reader.GetInt32(6) == 1;
+            var productInfo = reader.GetString(7);
+            var isFavorite = reader.GetInt32(8) == 1;
+
+            DateTime lastPriceUpdate = DateTime.MinValue;
+            if (!string.IsNullOrEmpty(lastPriceUpdateStr))
+            {
+                DateTime.TryParse(lastPriceUpdateStr, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out lastPriceUpdate);
+            }
+
+            list.Add(new GiftInfo(
+                produkt, 
+                price, 
+                url, 
+                priceRunnerProductId, 
+                lastPriceUpdate, 
+                shopName, 
+                isManualPrice, 
+                productInfo,
+                isFavorite
+            ));
+        }
+
+        return list;
+    }
+
+    public async Task AppendAsync(GiftInfo gift)
+    {
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+
+        var command = connection.CreateCommand();
+        command.CommandText = @"
+            INSERT INTO gifts (person, produkt, price, url, priceRunnerProductId, lastPriceUpdate, 
+                              shopName, isManualPrice, productInfo, isFavorite)
+            VALUES ($person, $produkt, $price, $url, $priceRunnerProductId, $lastPriceUpdate, 
+                   $shopName, $isManualPrice, $productInfo, $isFavorite)";
+        
+        command.Parameters.AddWithValue("$person", _person);
+        command.Parameters.AddWithValue("$produkt", gift.Produkt);
+        command.Parameters.AddWithValue("$price", gift.Price);
+        command.Parameters.AddWithValue("$url", gift.URl);
+        command.Parameters.AddWithValue("$priceRunnerProductId", gift.PriceRunnerProductId ?? string.Empty);
+        command.Parameters.AddWithValue("$lastPriceUpdate", gift.LastPriceUpdate.ToString("o", CultureInfo.InvariantCulture));
+        command.Parameters.AddWithValue("$shopName", gift.ShopName ?? string.Empty);
+        command.Parameters.AddWithValue("$isManualPrice", gift.IsManualPrice ? 1 : 0);
+        command.Parameters.AddWithValue("$productInfo", gift.ProductInfo ?? string.Empty);
+        command.Parameters.AddWithValue("$isFavorite", gift.isFavorite ? 1 : 0);
+
+        await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task SaveAsync(IEnumerable<GiftInfo> gifts)
+    {
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+
+        using var transaction = connection.BeginTransaction();
+
+        try
+        {
+            // Delete all gifts for this person
+            var deleteCommand = connection.CreateCommand();
+            deleteCommand.CommandText = "DELETE FROM gifts WHERE person = $person";
+            deleteCommand.Parameters.AddWithValue("$person", _person);
+            await deleteCommand.ExecuteNonQueryAsync();
+
+            // Insert all gifts
+            foreach (var gift in gifts)
+            {
+                var insertCommand = connection.CreateCommand();
+                insertCommand.CommandText = @"
+                    INSERT INTO gifts (person, produkt, price, url, priceRunnerProductId, lastPriceUpdate, 
+                                      shopName, isManualPrice, productInfo, isFavorite)
+                    VALUES ($person, $produkt, $price, $url, $priceRunnerProductId, $lastPriceUpdate, 
+                           $shopName, $isManualPrice, $productInfo, $isFavorite)";
+                
+                insertCommand.Parameters.AddWithValue("$person", _person);
+                insertCommand.Parameters.AddWithValue("$produkt", gift.Produkt);
+                insertCommand.Parameters.AddWithValue("$price", gift.Price);
+                insertCommand.Parameters.AddWithValue("$url", gift.URl);
+                insertCommand.Parameters.AddWithValue("$priceRunnerProductId", gift.PriceRunnerProductId ?? string.Empty);
+                insertCommand.Parameters.AddWithValue("$lastPriceUpdate", gift.LastPriceUpdate.ToString("o", CultureInfo.InvariantCulture));
+                insertCommand.Parameters.AddWithValue("$shopName", gift.ShopName ?? string.Empty);
+                insertCommand.Parameters.AddWithValue("$isManualPrice", gift.IsManualPrice ? 1 : 0);
+                insertCommand.Parameters.AddWithValue("$productInfo", gift.ProductInfo ?? string.Empty);
+                insertCommand.Parameters.AddWithValue("$isFavorite", gift.isFavorite ? 1 : 0);
+
+                await insertCommand.ExecuteNonQueryAsync();
+            }
+
+            transaction.Commit();
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
+        }
+    }
+
+    public async Task SaveAllAsync(IEnumerable<GiftInfo> gifts) => await SaveAsync(gifts);
+
+    public static string GetDatabasePath()
+    {
+        string appDataDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "JulegaveListe"
+        );
+        return Path.Combine(appDataDir, "gifts.db");
+    }
+}
+
+// Keep FileStorage for migration purposes
 class FileStorage
 {
     private readonly string _originalFilePath;
@@ -351,7 +646,7 @@ class FileStorage
     // effective path used for actual IO; may be switched to a fallback if original is not writable
     string FilePath => _effectiveFilePath;
 
-    // Format per line: <escaped product>|<price-in-invariant-culture>|<escaped url>|<priceRunnerProductId>|<lastPriceUpdate>|<shopName>
+    // Format per line: <escaped product>|<price-in-invariant-culture>|<escaped url>|<priceRunnerProductId>|<lastPriceUpdate>|<shopName>|<isManualPrice>|<isFavorite>|<productInfo>
     private static string Escape(string s) => s?.Replace("\\", "\\\\").Replace("|", "\\|") ?? string.Empty;
     private static string Unescape(string s) => s?.Replace("\\|", "|").Replace("\\\\", "\\") ?? string.Empty;
 
@@ -367,7 +662,6 @@ class FileStorage
         {
             if (escape)
             {
-                // accept any escaped char
                 sb.Append(c);
                 escape = false;
                 continue;
@@ -385,7 +679,6 @@ class FileStorage
                 sb.Clear();
                 continue;
             }
-
             sb.Append(c);
         }
 
@@ -410,6 +703,7 @@ class FileStorage
     {
         var list = new List<GiftInfo>();
         string pathToRead = FilePath;
+        bool needsUpgrade = false;
 
         // Check if primary path exists, otherwise use fallback
         if (!File.Exists(FilePath))
@@ -425,42 +719,56 @@ class FileStorage
         {
             if (File.Exists(pathToRead))
             {
-                using var fs = new FileStream(pathToRead, FileMode.Open, FileAccess.Read, FileShare.Read);
-                using var sr = new StreamReader(fs, Encoding.UTF8);
+                using var sr = new StreamReader(pathToRead, Encoding.UTF8);
                 string? line;
                 while ((line = await sr.ReadLineAsync()) != null)
                 {
                     if (string.IsNullOrWhiteSpace(line)) continue;
-
                     var parts = SplitEscaped(line);
                     if (parts.Length < 2) continue;
-
-                    string product = Unescape(parts[0]);
-                    string pricePart = parts.Length >= 2 ? parts[1] : "0";
-                    string urlPart = parts.Length >= 3 ? Unescape(parts[2]) : string.Empty;
-                    string priceRunnerIdPart = parts.Length >= 4 ? Unescape(parts[3]) : string.Empty;
-                    string lastUpdatePart = parts.Length >= 5 ? parts[4] : string.Empty;
-                    string shopNamePart = parts.Length >= 6 ? Unescape(parts[5]) : string.Empty;
+                    string productPart = Unescape(parts[0]);
+                    string pricePart = parts[1];
+                    if (parts.Length < 9)
+                    {
+                        needsUpgrade = true;
+                    }
+                    string urlPart = parts.Length > 2 ? Unescape(parts[2]) : string.Empty;
+                    string prIdPart = parts.Length > 3 ? Unescape(parts[3]) : string.Empty;
+                    string lastUpdatePart = parts.Length > 4 ? parts[4] : string.Empty;
+                    string shopNamePart = parts.Length > 5 ? Unescape(parts[5]) : string.Empty;
+                    bool manualPrice = parts.Length > 6 && bool.TryParse(parts[6], out bool mp) && mp;
+                    string productInfo = parts.Length > 7 ? Unescape(parts[7]) : string.Empty;
+                    bool isFavorite = parts.Length > 8 && bool.TryParse(parts[8], out bool fav) && fav;
 
                     if (!float.TryParse(pricePart, NumberStyles.Any, CultureInfo.InvariantCulture, out float price))
                     {
-                        // try fallback parse
-                        float.TryParse(Regex.Replace(pricePart, @"[^\d.]", ""), NumberStyles.Any, CultureInfo.InvariantCulture, out price);
+                        price = 0f;
                     }
-
                     DateTime lastUpdate = DateTime.MinValue;
                     if (!string.IsNullOrEmpty(lastUpdatePart))
                     {
                         DateTime.TryParse(lastUpdatePart, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out lastUpdate);
                     }
-
-                    list.Add(new GiftInfo(product, price, urlPart, priceRunnerIdPart, lastUpdate, shopNamePart));
+                    list.Add(new GiftInfo(productPart, price, urlPart, prIdPart, lastUpdate, shopNamePart, manualPrice, productInfo, isFavorite));
                 }
             }
         }
         catch (Exception)
         {
-            // Silent fail - return empty list
+            // Ignore read errors
+        }
+
+        // Auto-upgrade old format to new format
+        if (needsUpgrade && list.Count > 0)
+        {
+            try
+            {
+                await SaveAllAsync(list);
+            }
+            catch
+            {
+                // Ignore save errors
+            }
         }
 
         return list;
@@ -468,15 +776,13 @@ class FileStorage
 
     public async Task AppendAsync(GiftInfo gift)
     {
-        string line = $"{Escape(gift.Produkt)}|{gift.Price.ToString(CultureInfo.InvariantCulture)}|{Escape(gift.URl)}|{Escape(gift.PriceRunnerProductId)}|{gift.LastPriceUpdate.ToString("o", CultureInfo.InvariantCulture)}|{Escape(gift.ShopName)}|{gift.IsManualPrice}{Environment.NewLine}";
+        string line = $"{Escape(gift.Produkt)}|{gift.Price.ToString(CultureInfo.InvariantCulture)}|{Escape(gift.URl)}|{Escape(gift.PriceRunnerProductId)}|{gift.LastPriceUpdate.ToString("o", CultureInfo.InvariantCulture)}|{Escape(gift.ShopName)}|{gift.IsManualPrice}|{Escape(gift.ProductInfo)}{Environment.NewLine}";
 
         bool primarySuccess = false;
         
         // Try to write to primary location (project folder)
         try
         {
-            var dir = Path.GetDirectoryName(FilePath) ?? AppContext.BaseDirectory;
-            Directory.CreateDirectory(dir);
             await File.AppendAllTextAsync(FilePath, line, Encoding.UTF8);
             primarySuccess = true;
         }
@@ -493,30 +799,23 @@ class FileStorage
         // Also write to AppData fallback location (for backup)
         try
         {
-            string fallbackPath = GetFallbackPath();
-            var fallbackDir = Path.GetDirectoryName(fallbackPath) ?? Path.GetDirectoryName(_originalFilePath) ?? AppContext.BaseDirectory;
-            Directory.CreateDirectory(fallbackDir);
-            await File.AppendAllTextAsync(fallbackPath, line, Encoding.UTF8);
-            
-            // If primary write failed, copy entire fallback file back to primary location
+            string fallback = GetFallbackPath();
+            string? dir = Path.GetDirectoryName(fallback);
+            if (dir != null && !Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+            await File.AppendAllTextAsync(fallback, line, Encoding.UTF8);
             if (!primarySuccess)
             {
-                try
-                {
-                    var dir = Path.GetDirectoryName(FilePath) ?? AppContext.BaseDirectory;
-                    Directory.CreateDirectory(dir);
-                    File.Copy(fallbackPath, FilePath, overwrite: true);
-                }
-                catch (Exception)
-                {
-                }
+                _effectiveFilePath = fallback;
             }
         }
         catch (Exception)
         {
             if (!primarySuccess)
             {
-                throw; // If both failed, throw the exception
+                throw;
             }
         }
     }
@@ -531,13 +830,17 @@ class FileStorage
             sb.Append('|');
             sb.Append(g.Price.ToString(CultureInfo.InvariantCulture));
             sb.Append('|');
-            sb.Append(Escape(g.URl ?? string.Empty));
+            sb.Append(Escape(g.URl));
             sb.Append('|');
-            sb.Append(Escape(g.PriceRunnerProductId ?? string.Empty));
+            sb.Append(Escape(g.PriceRunnerProductId));
             sb.Append('|');
             sb.Append(g.LastPriceUpdate.ToString("o", CultureInfo.InvariantCulture));
             sb.Append('|');
-            sb.Append(Escape(g.ShopName ?? string.Empty));
+            sb.Append(Escape(g.ShopName));
+            sb.Append('|');
+            sb.Append(g.IsManualPrice);
+            sb.Append('|');
+            sb.Append(Escape(g.ProductInfo));
             sb.AppendLine();
         }
 
@@ -546,8 +849,6 @@ class FileStorage
         // Try to write to primary location (project folder)
         try
         {
-            var dir = Path.GetDirectoryName(FilePath) ?? AppContext.BaseDirectory;
-            Directory.CreateDirectory(dir);
             await File.WriteAllTextAsync(FilePath, sb.ToString(), Encoding.UTF8);
             primarySuccess = true;
         }
@@ -564,23 +865,16 @@ class FileStorage
         // Also write to AppData fallback (for backup)
         try
         {
-            string fallbackPath = GetFallbackPath();
-            var fallbackDir = Path.GetDirectoryName(fallbackPath) ?? AppContext.BaseDirectory;
-            Directory.CreateDirectory(fallbackDir);
-            await File.WriteAllTextAsync(fallbackPath, sb.ToString(), Encoding.UTF8);
-            
-            // If primary write failed, copy fallback to primary
+            string fallback = GetFallbackPath();
+            string? dir = Path.GetDirectoryName(fallback);
+            if (dir != null && !Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+            await File.WriteAllTextAsync(fallback, sb.ToString(), Encoding.UTF8);
             if (!primarySuccess)
             {
-                try
-                {
-                    var dir = Path.GetDirectoryName(FilePath) ?? AppContext.BaseDirectory;
-                    Directory.CreateDirectory(dir);
-                    File.Copy(fallbackPath, FilePath, overwrite: true);
-                }
-                catch (Exception)
-                {
-                }
+                _effectiveFilePath = fallback;
             }
         }
         catch (Exception)
@@ -628,23 +922,17 @@ class PriceUpdateService : BackgroundService
 
     private async Task UpdateAllPricesAsync()
     {
-        string[] files =
-        {
-            @"\Jannicgifts.txt",
-            @"\Katrinegifts.txt",
-            @"\Rudgifts.txt",
-            @"\Hjaltegifts.txt"
-        };
+        string[] persons = { "jannic", "katrine", "rud", "hjalte" };
 
-        foreach (var file in files)
+        foreach (var person in persons)
         {
-            await UpdateFileAsync(file);
+            await UpdatePersonAsync(person);
         }
     }
 
-    private async Task UpdateFileAsync(string filePath)
+    private async Task UpdatePersonAsync(string person)
     {
-        var storage = new FileStorage(filePath);
+        var storage = new DatabaseStorage(person);
         var list = await storage.LoadAsync();
 
         if (list.Count == 0) return;
@@ -687,7 +975,7 @@ class PriceUpdateService : BackgroundService
 
 public class GiftInfo
 {
-    public GiftInfo(string produkt, float price, string uRl, string? priceRunnerProductId = null, DateTime? lastPriceUpdate = null, string? shopName = null, bool isManualPrice = false)
+    public GiftInfo(string produkt, float price, string uRl, string? priceRunnerProductId = null, DateTime? lastPriceUpdate = null, string? shopName = null, bool isManualPrice = false, string? productInfo = null, bool isFavorite = false)
     {
         Produkt = produkt;
         Price = price;
@@ -696,14 +984,20 @@ public class GiftInfo
         LastPriceUpdate = lastPriceUpdate ?? DateTime.MinValue;
         ShopName = shopName ?? string.Empty;
         IsManualPrice = isManualPrice;
+        ProductInfo = productInfo ?? string.Empty;
+        this.isFavorite = isFavorite;
     }
     public string Produkt { get; set; }
     public float Price { get; set; }
+    
+    [JsonPropertyName("url")]
     public string URl { get; set; }
+    public bool isFavorite { get; set; }
     public string PriceRunnerProductId { get; set; }
     public DateTime LastPriceUpdate { get; set; }
     public string ShopName { get; set; }
     public bool IsManualPrice { get; set; }
+    public string ProductInfo { get; set; }
 }
 
 public class ProductInfoRequest
@@ -725,12 +1019,26 @@ public class AddGiftRequest
     public float Price { get; set; }
     public string Url { get; set; } = string.Empty;
     public bool IsManualPrice { get; set; }
+    public string ProductInfo { get; set; } = string.Empty;
+    public bool IsFavorite { get; set; }
 }
 
 public class RemoveGiftsRequest
 {
     public string Person { get; set; } = string.Empty;
     public List<string> Urls { get; set; } = new List<string>();
+}
+
+public class EditGiftRequest
+{
+    public string Person { get; set; } = string.Empty;
+    public string OriginalUrl { get; set; } = string.Empty;
+    public string ProductName { get; set; } = string.Empty;
+    public float Price { get; set; }
+    public string Url { get; set; } = string.Empty;
+    public bool IsManualPrice { get; set; }
+    public string ProductInfo { get; set; } = string.Empty;
+    public bool IsFavorite { get; set; }
 }
 
 class Website
@@ -747,6 +1055,19 @@ class Website
         builder.Services.AddCors();
         builder.Services.AddHostedService<PriceUpdateService>();
         
+        // Configure JSON serialization to use camelCase for JavaScript compatibility
+        var jsonOptions = new System.Text.Json.JsonSerializerOptions
+        {
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+            WriteIndented = false,
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never
+        };
+        
+        builder.Services.ConfigureHttpJsonOptions(options =>
+        {
+            options.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+        });
+        
         // Disable ASP.NET Core logging to keep console clean
         builder.Logging.ClearProviders();
         
@@ -762,16 +1083,20 @@ class Website
         {
             try
             {
+                Console.WriteLine($"[PRODUCT-INFO] Fetching info for URL: {request.Url}");
                 var (productName, price, isManualPrice) = await ProductInformation.GetProductInfoAsync(request.Url);
+                Console.WriteLine($"[PRODUCT-INFO] Success - Name: {productName}, Price: {price}");
                 return Results.Json(new ProductInfoResponse 
                 { 
                     ProductName = productName, 
                     Price = price, 
                     IsManualPrice = isManualPrice 
-                });
+                }, jsonOptions);
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"[PRODUCT-INFO] Error: {ex.Message}");
+                Console.WriteLine($"[PRODUCT-INFO] Stack trace: {ex.StackTrace}");
                 return Results.Problem($"Error fetching product info: {ex.Message}");
             }
         });
@@ -781,19 +1106,14 @@ class Website
         {
             try
             {
-                string fileName = request.Person.ToLower() switch
-                {
-                    "rud" => "Rudgifts.txt",
-                    "katrine" => "Katrinegifts.txt",
-                    "jannic" => "Jannicgifts.txt",
-                    "hjalte" => "Hjaltegifts.txt",
-                    _ => throw new ArgumentException("Invalid person name")
-                };
-
-                string userDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-                string appDataPath = Path.Combine(userDir, "JulegaveListe", fileName);
+                string personKey = request.Person.ToLowerInvariant();
                 
-                var storage = new FileStorage(appDataPath);
+                if (personKey != "rud" && personKey != "katrine" && personKey != "jannic" && personKey != "hjalte")
+                {
+                    return Results.BadRequest("Invalid person name");
+                }
+                
+                var storage = new DatabaseStorage(personKey);
                 var list = await storage.LoadAsync();
                 
                 var newGift = new GiftInfo(
@@ -803,7 +1123,9 @@ class Website
                     null,
                     DateTime.Now,
                     null,
-                    request.IsManualPrice
+                    request.IsManualPrice,
+                    request.ProductInfo ?? string.Empty,
+                    request.IsFavorite
                 );
                 
                 list.Add(newGift);
@@ -822,19 +1144,14 @@ class Website
         {
             try
             {
-                string fileName = request.Person.ToLower() switch
-                {
-                    "rud" => "Rudgifts.txt",
-                    "katrine" => "Katrinegifts.txt",
-                    "jannic" => "Jannicgifts.txt",
-                    "hjalte" => "Hjaltegifts.txt",
-                    _ => throw new ArgumentException("Invalid person name")
-                };
-
-                string userDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-                string appDataPath = Path.Combine(userDir, "JulegaveListe", fileName);
+                string personKey = request.Person.ToLowerInvariant();
                 
-                var storage = new FileStorage(appDataPath);
+                if (personKey != "rud" && personKey != "katrine" && personKey != "jannic" && personKey != "hjalte")
+                {
+                    return Results.BadRequest("Invalid person name");
+                }
+                
+                var storage = new DatabaseStorage(personKey);
                 var list = await storage.LoadAsync();
                 
                 // Remove items that match the URLs
@@ -850,63 +1167,211 @@ class Website
             }
         });
 
+        // Admin API endpoint - Edit gift
+        app.MapPost("/api/edit-gift", async (EditGiftRequest request) =>
+        {
+            try
+            {
+                string personKey = request.Person.ToLowerInvariant();
+                
+                if (personKey != "rud" && personKey != "katrine" && personKey != "jannic" && personKey != "hjalte")
+                {
+                    return Results.BadRequest("Invalid person name");
+                }
+                
+                var storage = new DatabaseStorage(personKey);
+                var list = await storage.LoadAsync();
+                
+                // Find the gift to edit by OriginalUrl
+                var gift = list.FirstOrDefault(g => g.URl == request.OriginalUrl);
+                if (gift == null)
+                {
+                    return Results.NotFound(new { success = false, message = "Gift not found" });
+                }
+                
+                // Update the gift properties
+                gift.Produkt = request.ProductName;
+                gift.Price = request.Price;
+                gift.URl = request.Url;
+                gift.IsManualPrice = request.IsManualPrice;
+                gift.ProductInfo = request.ProductInfo ?? string.Empty;
+                gift.isFavorite = request.IsFavorite;
+                gift.LastPriceUpdate = DateTime.Now;
+                
+                await storage.SaveAllAsync(list);
+                
+                return Results.Ok(new { success = true, message = "Gift updated successfully" });
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem($"Error editing gift: {ex.Message}");
+            }
+        });
+
+        // Admin API endpoint - Migrate from txt files to SQLite
+        app.MapPost("/api/migrate-to-sqlite", async () =>
+        {
+            try
+            {
+                var result = new
+                {
+                    success = true,
+                    migrated = new List<object>(),
+                    errors = new List<string>(),
+                    filesDeleted = new List<string>()
+                };
+
+                string[] persons = { "rud", "katrine", "jannic", "hjalte" };
+                string[] fileNames = { "Rudgifts.txt", "Katrinegifts.txt", "Jannicgifts.txt", "Hjaltegifts.txt" };
+
+                string userDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                string appDataDir = Path.Combine(userDir, "JulegaveListe");
+
+                for (int i = 0; i < persons.Length; i++)
+                {
+                    string person = persons[i];
+                    string fileName = fileNames[i];
+                    
+                    try
+                    {
+                        // Try to find the txt file in various locations
+                        var candidates = new[]
+                        {
+                            Path.Combine(appDataDir, fileName),
+                            Path.Combine(AppContext.BaseDirectory, fileName),
+                            Path.Combine(Directory.GetCurrentDirectory(), fileName),
+                            Path.Combine("C:\\", fileName)
+                        };
+
+                        string? txtFilePath = candidates.FirstOrDefault(File.Exists);
+                        
+                        if (txtFilePath == null)
+                        {
+                            // No txt file found, skip
+                            ((List<object>)result.migrated).Add(new { person, giftsCount = 0, message = "No txt file found" });
+                            continue;
+                        }
+
+                        Console.WriteLine($"[MIGRATION] Found {fileName} at: {txtFilePath}");
+                        
+                        // Load from txt file
+                        var fileStorage = new FileStorage(txtFilePath);
+                        var gifts = await fileStorage.LoadAsync();
+                        
+                        Console.WriteLine($"[MIGRATION] Loaded {gifts.Count} gifts for {person}");
+                        
+                        // Ensure all fields have default values if missing
+                        foreach (var gift in gifts)
+                        {
+                            gift.Produkt = gift.Produkt ?? string.Empty;
+                            gift.URl = gift.URl ?? string.Empty;
+                            gift.PriceRunnerProductId = gift.PriceRunnerProductId ?? string.Empty;
+                            gift.ShopName = gift.ShopName ?? string.Empty;
+                            gift.ProductInfo = gift.ProductInfo ?? string.Empty;
+                            if (gift.LastPriceUpdate == DateTime.MinValue)
+                            {
+                                gift.LastPriceUpdate = DateTime.Now;
+                            }
+                        }
+                        
+                        // Save to database
+                        var dbStorage = new DatabaseStorage(person);
+                        await dbStorage.SaveAllAsync(gifts);
+                        
+                        // Verify migration
+                        var verifyGifts = await dbStorage.LoadAsync();
+                        
+                        if (verifyGifts.Count != gifts.Count)
+                        {
+                            ((List<string>)result.errors).Add($"{person}: Verification failed. Expected {gifts.Count} gifts, got {verifyGifts.Count}");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"[MIGRATION] Verified {verifyGifts.Count} gifts for {person}");
+                            ((List<object>)result.migrated).Add(new { person, giftsCount = gifts.Count, message = "Successfully migrated" });
+                            
+                            // Delete txt file if migration successful
+                            try
+                            {
+                                File.Delete(txtFilePath);
+                                ((List<string>)result.filesDeleted).Add(txtFilePath);
+                                Console.WriteLine($"[MIGRATION] Deleted {txtFilePath}");
+                            }
+                            catch (Exception deleteEx)
+                            {
+                                ((List<string>)result.errors).Add($"Could not delete {txtFilePath}: {deleteEx.Message}");
+                            }
+                        }
+                    }
+                    catch (Exception personEx)
+                    {
+                        ((List<string>)result.errors).Add($"{person}: {personEx.Message}");
+                        Console.Error.WriteLine($"[MIGRATION] Error migrating {person}: {personEx.Message}");
+                    }
+                }
+
+                return Results.Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem($"Error during migration: {ex.Message}");
+            }
+        });
+
         app.MapGet("/gifts/{person}", async (string person) =>
         {
-            // Prefer files placed next to the app (publish folder) so containers can include or mount them.
-            string fileName = person.ToLower() switch
+            try
             {
-                "rud" => "Rudgifts.txt",
-                "katrine" => "Katrinegifts.txt",
-                "jannic" => "Jannicgifts.txt",
-                "hjalte" => "Hjaltegifts.txt",
-                _ => "gifts.txt"
-            };
+                string personKey = person.ToLowerInvariant();
+                
+                if (personKey != "rud" && personKey != "katrine" && personKey != "jannic" && personKey != "hjalte")
+                {
+                    return Results.BadRequest("Unknown person. Valid options: rud, katrine, jannic, hjalte");
+                }
 
-            // Build AppData fallback path
-            string userDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            string appDataPath = Path.Combine(userDir, "JulegaveListe", fileName);
-
-            var candidates = new[]
+                Console.WriteLine($"[API] Loading gifts for {person} from database");
+                var storage = new DatabaseStorage(personKey);
+                var list = await storage.LoadAsync();
+                Console.WriteLine($"[API] Loaded {list.Count} gifts");
+                return Results.Json(list, jsonOptions);
+            }
+            catch (Exception ex)
             {
-                // Prioritize AppData location (where data is reliably written)
-                appDataPath,
-                // container-friendly data directory (mounted volume)
-                Path.Combine(Path.DirectorySeparatorChar == '/' ? "/data" : "/data", fileName),
-                Path.Combine(AppContext.BaseDirectory, fileName),
-                Path.Combine(Directory.GetCurrentDirectory(), fileName),
-                Path.Combine("C:\\", fileName)
-            };
-
-            string chosen = candidates.FirstOrDefault(File.Exists) ?? appDataPath;
-            var storage = new FileStorage(chosen);
-            var list = await storage.LoadAsync();
-            return Results.Json(list);
+                Console.Error.WriteLine($"Error loading gifts for {person}: {ex.Message}");
+                return Results.Problem($"Error loading gifts: {ex.Message}");
+            }
         });
 
     app.MapGet("/gifts", async () =>
         {
-            string[] names = { "Jannicgifts.txt", "Katrinegifts.txt", "Rudgifts.txt", "Hjaltegifts.txt" };
-            var all = new List<GiftInfo>();
-            
-            // Build AppData base path
-            string userDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            string appDataDir = Path.Combine(userDir, "JulegaveListe");
-            
-            foreach (var name in names)
+            try
             {
-                string appDataPath = Path.Combine(appDataDir, name);
-                var candidate = appDataPath;
+                string[] persons = { "rud", "katrine", "jannic", "hjalte" };
+                var all = new List<GiftInfo>();
                 
-                // Try fallback locations if AppData doesn't exist
-                if (!File.Exists(candidate)) candidate = Path.Combine(Path.DirectorySeparatorChar == '/' ? "/data" : "/data", name);
-                if (!File.Exists(candidate)) candidate = Path.Combine(AppContext.BaseDirectory, name);
-                if (!File.Exists(candidate)) candidate = Path.Combine(Directory.GetCurrentDirectory(), name);
-                if (!File.Exists(candidate)) candidate = Path.Combine("C:\\", name);
+                foreach (var person in persons)
+                {
+                    try
+                    {
+                        Console.WriteLine($"[API] Loading gifts for {person} from database");
+                        var storage = new DatabaseStorage(person);
+                        var gifts = await storage.LoadAsync();
+                        Console.WriteLine($"[API] Loaded {gifts.Count} gifts for {person}");
+                        all.AddRange(gifts);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"Error loading gifts for {person}: {ex.Message}");
+                    }
+                }
                 
-                var s = new FileStorage(candidate);
-                all.AddRange(await s.LoadAsync());
+                return Results.Json(all, jsonOptions);
             }
-            return Results.Json(all);
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Error loading all gifts: {ex.Message}");
+                return Results.Problem($"Error loading gifts: {ex.Message}");
+            }
         });
 
         // Serve the website.html file at the root on port 5000
