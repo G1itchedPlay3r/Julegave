@@ -232,25 +232,25 @@
                                             };
 
                                             const getUrl = (obj) => {
-                                                return getString(obj, 'URl', 'Url', 'URL', 'url', 'uRl');
+                                                return getString(obj, 'urL', 'url', 'URl', 'Url', 'URL', 'uRl');
                                             };
 
                                             const getShopName = (obj) => {
-                                                return getString(obj, 'ShopName', 'shopName', 'Shopname');
+                                                return getString(obj, 'shopName', 'ShopName', 'Shopname');
                                             };
 
                                             const getIsManualPrice = (obj) => {
-                                                const val = obj.IsManualPrice ?? obj.isManualPrice ?? false;
+                                                const val = obj.isManualPrice ?? obj.IsManualPrice ?? false;
                                                 return val === true || val === 'true' || val === 'True';
                                             };
 
                                             const getIsFavorite = (obj) => {
-                                                const val = obj.IsFavorite ?? obj.isFavorite ?? false;
+                                                const val = obj.isFavorite ?? obj.IsFavorite ?? false;
                                                 return val === true || val === 'true' || val === 'True';
                                             };
 
                                             const getProductInfo = (obj) => {
-                                                return getString(obj, 'ProductInfo', 'productInfo');
+                                                return getString(obj, 'productInfo', 'ProductInfo');
                                             };
 
                                             // Sort: favorites first
@@ -263,7 +263,7 @@
                                             });
 
                                             listEl.innerHTML = sortedData.map(i => {
-                                                const produkt = getString(i, 'Produkt', 'produkt', 'Product', 'product', 'Name', 'name');
+                                                const produkt = getString(i, 'produkt', 'Produkt', 'product', 'Product', 'Name', 'name');
                                                 const price = getPrice(i);
                                                 const url = getUrl(i);
                                                 const shopName = getShopName(i);

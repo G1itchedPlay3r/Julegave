@@ -871,6 +871,12 @@ class Website
         builder.Services.AddCors();
         builder.Services.AddHostedService<PriceUpdateService>();
         
+        // Configure JSON serialization to use camelCase for JavaScript compatibility
+        builder.Services.ConfigureHttpJsonOptions(options =>
+        {
+            options.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+        });
+        
         // Disable ASP.NET Core logging to keep console clean
         builder.Logging.ClearProviders();
         
