@@ -1341,11 +1341,11 @@ class Website
             {
                 Path.Combine(AppContext.BaseDirectory, "website.html"),  // Deployed with app
                 Path.Combine(Directory.GetCurrentDirectory(), "website.html"),  // Current directory
+                "/home/rud/Julegave/JulegaveListe/website.html",  // Linux deployment actual path
                 Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "website.html"),  // IDE debug
                 Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "website.html"),  // IDE debug alternate
                 @"c:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\website.html",  // Windows dev
-                "/home/rud/Julegave/website.html",  // Linux deployment
-                "/home/rud/Julegave/JulegaveListe/website.html"  // Linux alternate
+                "/home/rud/Julegave/website.html"  // Linux alternate
             };
 
             foreach (var p in candidates)
@@ -1374,11 +1374,11 @@ class Website
             {
                 Path.Combine(AppContext.BaseDirectory, "admin.html"),  // Deployed with app
                 Path.Combine(Directory.GetCurrentDirectory(), "admin.html"),  // Current directory
+                "/home/rud/Julegave/JulegaveListe/admin.html",  // Linux deployment actual path
                 Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "admin.html"),  // IDE debug
                 Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "admin.html"),  // IDE debug alternate
                 @"c:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\admin.html",  // Windows dev
-                "/home/rud/Julegave/admin.html",  // Linux deployment
-                "/home/rud/Julegave/JulegaveListe/admin.html"  // Linux alternate
+                "/home/rud/Julegave/admin.html"  // Linux alternate
             };
 
             foreach (var p in candidates)
