@@ -456,54 +456,68 @@ class DatabaseStorage
         if (string.IsNullOrWhiteSpace(person)) throw new ArgumentNullException(nameof(person));
         _person = person.ToLowerInvariant();
         
-        // Get database directory - Linux/Unix compatible
-        string appDataDir;
-        if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
-        {
-            // For Linux/Mac: try multiple locations in order of preference
-            string? customPath = Environment.GetEnvironmentVariable("JULEGAVE_DATA_PATH");
-            string[] candidatePaths = customPath != null 
-                ? new[] { customPath, Path.Combine(AppContext.BaseDirectory, "data"), "/tmp/julegaveliste" }
-                : new[] { "/var/lib/julegaveliste", Path.Combine(AppContext.BaseDirectory, "data"), "/tmp/julegaveliste" };
-            
-            appDataDir = null;
-            foreach (var path in candidatePaths)
-            {
-                try
-                {
-                    Directory.CreateDirectory(path);
-                    // Test write permissions
-                    string testFile = Path.Combine(path, ".write_test");
-                    File.WriteAllText(testFile, "test");
-                    File.Delete(testFile);
-                    appDataDir = path;
-                    break;
-                }
-                catch
-                {
-                    continue;
-                }
-            }
-            
-            if (string.IsNullOrEmpty(appDataDir))
-            {
-                throw new Exception("Could not find a writable directory for database. Tried: " + string.Join(", ", candidatePaths));
-            }
-        }
-        else
-        {
-            // Windows: use LocalApplicationData
-            appDataDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "JulegaveListe"
-            );
-            Directory.CreateDirectory(appDataDir);
-        }
+        // Use project folder for database storage
+        string projectDir = AppContext.BaseDirectory;
+        _dbPath = Path.Combine(projectDir, "gifts.db");
         
-        _dbPath = Path.Combine(appDataDir, "gifts.db");
         Console.WriteLine($"[DATABASE] Using database path: {_dbPath}");
         
+        // Check if database exists in old AppData location and migrate it
+        MigrateFromAppDataIfNeeded();
+        
         InitializeDatabase();
+    }
+    
+    private void MigrateFromAppDataIfNeeded()
+    {
+        // If database already exists in project folder, no migration needed
+        if (File.Exists(_dbPath))
+        {
+            return;
+        }
+        
+        // Check old AppData location
+        string? oldDbPath = null;
+        try
+        {
+            if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+            {
+                // Check common Linux locations
+                string[] oldPaths = {
+                    "/var/lib/julegaveliste/gifts.db",
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "JulegaveListe", "gifts.db")
+                };
+                
+                foreach (var path in oldPaths)
+                {
+                    if (File.Exists(path))
+                    {
+                        oldDbPath = path;
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                // Windows AppData location
+                oldDbPath = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "JulegaveListe",
+                    "gifts.db"
+                );
+            }
+            
+            if (oldDbPath != null && File.Exists(oldDbPath))
+            {
+                Console.WriteLine($"[DATABASE] Migrating database from {oldDbPath} to {_dbPath}");
+                File.Copy(oldDbPath, _dbPath, overwrite: false);
+                Console.WriteLine($"[DATABASE] Migration successful");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[DATABASE] Migration failed (will start fresh): {ex.Message}");
+        }
     }
 
     private void InitializeDatabase()
@@ -661,48 +675,8 @@ class DatabaseStorage
 
     public static string GetDatabasePath()
     {
-        string appDataDir;
-        if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
-        {
-            // For Linux/Mac: try multiple locations in order of preference
-            string? customPath = Environment.GetEnvironmentVariable("JULEGAVE_DATA_PATH");
-            string[] candidatePaths = customPath != null 
-                ? new[] { customPath, Path.Combine(AppContext.BaseDirectory, "data"), "/tmp/julegaveliste" }
-                : new[] { "/var/lib/julegaveliste", Path.Combine(AppContext.BaseDirectory, "data"), "/tmp/julegaveliste" };
-            
-            appDataDir = null;
-            foreach (var path in candidatePaths)
-            {
-                try
-                {
-                    Directory.CreateDirectory(path);
-                    // Test write permissions
-                    string testFile = Path.Combine(path, ".write_test");
-                    File.WriteAllText(testFile, "test");
-                    File.Delete(testFile);
-                    appDataDir = path;
-                    break;
-                }
-                catch
-                {
-                    continue;
-                }
-            }
-            
-            if (string.IsNullOrEmpty(appDataDir))
-            {
-                appDataDir = Path.Combine(AppContext.BaseDirectory, "data");
-            }
-        }
-        else
-        {
-            // Windows: use LocalApplicationData
-            appDataDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "JulegaveListe"
-            );
-        }
-        return Path.Combine(appDataDir, "gifts.db");
+        // Database is stored in project folder
+        return Path.Combine(AppContext.BaseDirectory, "gifts.db");
     }
 }
 
