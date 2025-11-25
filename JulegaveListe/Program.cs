@@ -32,26 +32,6 @@ class BrowserAutomation
     {
         lock (_lock)
         {
-            // Check if driver is valid, if not recreate it
-            if (_driver != null)
-            {
-                try
-                {
-                    // Test if session is still valid by checking multiple properties
-                    var _ = _driver.WindowHandles;
-                    var __ = _driver.CurrentWindowHandle;
-                    // If we can access these, session is valid
-                }
-                catch (Exception ex)
-                {
-                    // Session invalid (browser closed, session expired, etc.)
-                    Console.WriteLine($"⚠️  WebDriver session invalid ({ex.GetType().Name}), recreating...");
-                    try { _driver.Quit(); } catch { }
-                    try { _driver.Dispose(); } catch { }
-                    _driver = null;
-                }
-            }
-            
             if (_driver == null)
             {
                 try
@@ -186,95 +166,55 @@ class BrowserAutomation
 
     public static async Task<(string productName, float price, bool isManualPrice)> GetProductInfoWithBrowser(string url)
     {
-        // Retry logic in case of session errors
-        Exception? lastException = null;
+        var driver = GetDriver();
         
-        for (int attempt = 0; attempt < 3; attempt++)
+        try
         {
-            try
-            {
-                Console.WriteLine($"Attempt {attempt + 1}/3: Getting product info from {url}");
-                var driver = GetDriver();
-                
-                Console.WriteLine($"Loading page with browser...");
-                driver.Navigate().GoToUrl(url);
-                
-                // Wait for page to fully load (including JavaScript)
-                await Task.Delay(3000);
+            Console.WriteLine($"Loading page with browser...");
+            driver.Navigate().GoToUrl(url);
+            
+            // Wait for page to fully load (including JavaScript)
+            await Task.Delay(3000);
 
             // Try to find product name - prioritize common e-commerce patterns
             string productName = "Ukendt produkt";
-            
-            // First, try to get from page title (often most reliable)
-            try
-            {
-                string pageTitle = driver.Title;
-                if (!string.IsNullOrWhiteSpace(pageTitle) && !pageTitle.Equals("Forside", StringComparison.OrdinalIgnoreCase))
-                {
-                    // Remove common suffixes like " - Proshop", " | Shop name", etc.
-                    var titleParts = pageTitle.Split(new[] { " - ", " | ", " | " }, StringSplitOptions.None);
-                    if (titleParts.Length > 0 && titleParts[0].Trim().Length > 5)
-                    {
-                        productName = titleParts[0].Trim();
-                        Console.WriteLine($"✓ Found name from title: {productName}");
-                        goto PriceSearch; // Skip other name searches if we found it
-                    }
-                }
-            }
-            catch { }
-            
             string[] nameSelectors = {
-                "h1[product-display-name]",  // Proshop specific
-                "[product-display-name]",  // Proshop attribute
+                "[product-display-name]",  // Proshop
                 "h1[itemprop='name']",  // Schema.org
+                "[itemprop='name']",  // Schema.org any element
                 "h1.product-name",
                 "h1.product-title",
                 ".product-name h1",
                 ".product-title h1",
-                "h1.ProductPage_title",  // Some sites use this
-                ".ProductPage h1",  // Product page heading
-                "main h1",  // Main content h1
-                "article h1",  // Article heading
-                "[data-product-name]",  // Data attribute
+                "h1",  // Fallback to any h1
             };
 
             foreach (var selector in nameSelectors)
             {
                 try
                 {
-                    var elements = driver.FindElements(By.CssSelector(selector));
-                    foreach (var element in elements)
+                    var element = driver.FindElement(By.CssSelector(selector));
+                    
+                    // Try attribute first (Proshop uses this)
+                    string? attrName = element.GetAttribute("product-display-name");
+                    if (!string.IsNullOrWhiteSpace(attrName))
                     {
-                        // Try attribute first (Proshop uses this)
-                        string? attrName = element.GetAttribute("product-display-name") ?? element.GetAttribute("data-product-name");
-                        if (!string.IsNullOrWhiteSpace(attrName) && !attrName.Equals("Forside", StringComparison.OrdinalIgnoreCase))
-                        {
-                            productName = attrName;
-                            Console.WriteLine($"✓ Found name from attribute: {productName}");
-                            goto PriceSearch;
-                        }
-                        
-                        // Try text content
-                        string? text = element.Text?.Trim();
-                        if (!string.IsNullOrWhiteSpace(text) && 
-                            !text.Equals("Forside", StringComparison.OrdinalIgnoreCase) && 
-                            text.Length > 5)
-                        {
-                            productName = text;
-                            Console.WriteLine($"✓ Found name from element: {productName}");
-                            goto PriceSearch;
-                        }
+                        productName = attrName;
+                        Console.WriteLine($"✓ Found name: {productName}");
+                        break;
+                    }
+                    
+                    // Try text content
+                    string? text = element.Text?.Trim();
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        productName = text;
+                        Console.WriteLine($"✓ Found name: {productName}");
+                        break;
                     }
                 }
                 catch { continue; }
             }
-            
-            if (productName == "Ukendt produkt")
-            {
-                Console.WriteLine("⚠️  Could not find product name on page");
-            }
-
-            PriceSearch:
 
             // Try to find price - prioritize visible price elements
             float price = 0f;
@@ -315,45 +255,17 @@ class BrowserAutomation
                         if (match.Success)
                         {
                             string priceText = match.Groups[1].Value;
-                            
-                            // Handle different formats:
-                            // Danish: "7.777,00" (dot = thousands, comma = decimal)
-                            // English: "7,777.00" (comma = thousands, dot = decimal)
-                            // We want to ignore decimals and keep whole number only
-                            
-                            // If there's a comma, check if it's followed by 2 digits (decimal separator)
+                            // Normalize: ignore decimals (after comma or dot)
+                            // Split on comma or dot and only keep the part before it
                             if (priceText.Contains(","))
                             {
-                                var parts = priceText.Split(',');
-                                if (parts.Length > 1 && parts[1].Length <= 2)
-                                {
-                                    // Danish format: comma is decimal separator, ignore it
-                                    priceText = parts[0];
-                                }
-                                else
-                                {
-                                    // Comma is thousands separator, keep all
-                                    priceText = priceText.Replace(",", "");
-                                }
+                                priceText = priceText.Split(',')[0];
                             }
-                            
-                            // If there's a dot, check if it's followed by 2 digits (decimal separator)
                             if (priceText.Contains("."))
                             {
-                                var parts = priceText.Split('.');
-                                if (parts.Length > 1 && parts[1].Length <= 2)
-                                {
-                                    // Dot is decimal separator (English format), ignore decimals
-                                    priceText = parts[0];
-                                }
-                                else
-                                {
-                                    // Dot is thousands separator (Danish format), remove it
-                                    priceText = priceText.Replace(".", "");
-                                }
+                                priceText = priceText.Split('.')[0];
                             }
-                            
-                            priceText = priceText.Replace(" ", "").Trim();
+                            priceText = priceText.Replace(" ", "");
                             
                             if (float.TryParse(priceText, NumberStyles.Any, CultureInfo.InvariantCulture, out float parsedPrice))
                             {
@@ -379,33 +291,12 @@ class BrowserAutomation
             }
 
             return (productName, price, isManualPrice);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"❌ Browser error (attempt {attempt + 1}/3): {ex.Message}");
-                lastException = ex;
-                
-                // Force driver recreation on error
-                lock (_lock)
-                {
-                    if (_driver != null)
-                    {
-                        try { _driver.Quit(); } catch { }
-                        try { _driver.Dispose(); } catch { }
-                        _driver = null;
-                    }
-                }
-                
-                if (attempt < 2)
-                {
-                    // Wait before retry
-                    await Task.Delay(2000);
-                }
-            }
         }
-        
-        // All attempts failed
-        throw new Exception($"Failed to get product info after 3 attempts. Last error: {lastException?.Message ?? "Unknown"}");
+        catch (Exception ex)
+        {
+            Console.WriteLine($"❌ Browser error: {ex.Message}");
+            throw;
+        }
     }
 }
 class ProductInformation 
@@ -460,7 +351,7 @@ class FileStorage
     // effective path used for actual IO; may be switched to a fallback if original is not writable
     string FilePath => _effectiveFilePath;
 
-    // Format per line: <escaped product>|<price-in-invariant-culture>|<escaped url>|<priceRunnerProductId>|<lastPriceUpdate>|<shopName>|<isManualPrice>|<isFavorite>|<productInfo>
+    // Format per line: <escaped product>|<price-in-invariant-culture>|<escaped url>|<priceRunnerProductId>|<lastPriceUpdate>|<shopName>
     private static string Escape(string s) => s?.Replace("\\", "\\\\").Replace("|", "\\|") ?? string.Empty;
     private static string Unescape(string s) => s?.Replace("\\|", "|").Replace("\\\\", "\\") ?? string.Empty;
 
@@ -519,7 +410,6 @@ class FileStorage
     {
         var list = new List<GiftInfo>();
         string pathToRead = FilePath;
-        bool needsUpgrade = false;
 
         // Check if primary path exists, otherwise use fallback
         if (!File.Exists(FilePath))
@@ -545,20 +435,12 @@ class FileStorage
                     var parts = SplitEscaped(line);
                     if (parts.Length < 2) continue;
 
-                    // Check if this is old format (less than 9 fields)
-                    if (parts.Length < 9)
-                    {
-                        needsUpgrade = true;
-                    }
-
                     string product = Unescape(parts[0]);
                     string pricePart = parts.Length >= 2 ? parts[1] : "0";
                     string urlPart = parts.Length >= 3 ? Unescape(parts[2]) : string.Empty;
                     string priceRunnerIdPart = parts.Length >= 4 ? Unescape(parts[3]) : string.Empty;
                     string lastUpdatePart = parts.Length >= 5 ? parts[4] : string.Empty;
                     string shopNamePart = parts.Length >= 6 ? Unescape(parts[5]) : string.Empty;
-                    bool isManualPrice = parts.Length >= 7 && bool.TryParse(parts[6], out bool mp) && mp;
-                    string productInfo = parts.Length >= 8 ? Unescape(parts[7]) : string.Empty;
 
                     if (!float.TryParse(pricePart, NumberStyles.Any, CultureInfo.InvariantCulture, out float price))
                     {
@@ -572,7 +454,7 @@ class FileStorage
                         DateTime.TryParse(lastUpdatePart, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out lastUpdate);
                     }
 
-                    list.Add(new GiftInfo(product, price, urlPart, priceRunnerIdPart, lastUpdate, shopNamePart, isManualPrice, productInfo));
+                    list.Add(new GiftInfo(product, price, urlPart, priceRunnerIdPart, lastUpdate, shopNamePart));
                 }
             }
         }
@@ -581,26 +463,12 @@ class FileStorage
             // Silent fail - return empty list
         }
 
-        // Auto-upgrade old format to new format
-        if (needsUpgrade && list.Count > 0)
-        {
-            try
-            {
-                await SaveAllAsync(list);
-                Console.WriteLine($"✓ Upgraded file format: {Path.GetFileName(FilePath)}");
-            }
-            catch
-            {
-                // Ignore upgrade errors
-            }
-        }
-
         return list;
     }
 
     public async Task AppendAsync(GiftInfo gift)
     {
-        string line = $"{Escape(gift.Produkt)}|{gift.Price.ToString(CultureInfo.InvariantCulture)}|{Escape(gift.URl)}|{Escape(gift.PriceRunnerProductId)}|{gift.LastPriceUpdate.ToString("o", CultureInfo.InvariantCulture)}|{Escape(gift.ShopName)}|{gift.IsManualPrice}|{Escape(gift.ProductInfo)}{Environment.NewLine}";
+        string line = $"{Escape(gift.Produkt)}|{gift.Price.ToString(CultureInfo.InvariantCulture)}|{Escape(gift.URl)}|{Escape(gift.PriceRunnerProductId)}|{gift.LastPriceUpdate.ToString("o", CultureInfo.InvariantCulture)}|{Escape(gift.ShopName)}|{gift.IsManualPrice}{Environment.NewLine}";
 
         bool primarySuccess = false;
         
@@ -670,10 +538,6 @@ class FileStorage
             sb.Append(g.LastPriceUpdate.ToString("o", CultureInfo.InvariantCulture));
             sb.Append('|');
             sb.Append(Escape(g.ShopName ?? string.Empty));
-            sb.Append('|');
-            sb.Append(g.IsManualPrice);
-            sb.Append('|');
-            sb.Append(Escape(g.ProductInfo ?? string.Empty));
             sb.AppendLine();
         }
 
@@ -823,7 +687,7 @@ class PriceUpdateService : BackgroundService
 
 public class GiftInfo
 {
-    public GiftInfo(string produkt, float price, string uRl, string? priceRunnerProductId = null, DateTime? lastPriceUpdate = null, string? shopName = null, bool isManualPrice = false, string? productInfo = null)
+    public GiftInfo(string produkt, float price, string uRl, string? priceRunnerProductId = null, DateTime? lastPriceUpdate = null, string? shopName = null, bool isManualPrice = false)
     {
         Produkt = produkt;
         Price = price;
@@ -832,19 +696,14 @@ public class GiftInfo
         LastPriceUpdate = lastPriceUpdate ?? DateTime.MinValue;
         ShopName = shopName ?? string.Empty;
         IsManualPrice = isManualPrice;
-        ProductInfo = productInfo ?? string.Empty;
     }
     public string Produkt { get; set; }
     public float Price { get; set; }
-    
-    [JsonPropertyName("url")]
     public string URl { get; set; }
-    
     public string PriceRunnerProductId { get; set; }
     public DateTime LastPriceUpdate { get; set; }
     public string ShopName { get; set; }
     public bool IsManualPrice { get; set; }
-    public string ProductInfo { get; set; }
 }
 
 public class ProductInfoRequest
@@ -866,24 +725,12 @@ public class AddGiftRequest
     public float Price { get; set; }
     public string Url { get; set; } = string.Empty;
     public bool IsManualPrice { get; set; }
-    public string ProductInfo { get; set; } = string.Empty;
 }
 
 public class RemoveGiftsRequest
 {
     public string Person { get; set; } = string.Empty;
     public List<string> Urls { get; set; } = new List<string>();
-}
-
-public class EditGiftRequest
-{
-    public string Person { get; set; } = string.Empty;
-    public string OriginalUrl { get; set; } = string.Empty;
-    public string ProductName { get; set; } = string.Empty;
-    public float Price { get; set; }
-    public string Url { get; set; } = string.Empty;
-    public bool IsManualPrice { get; set; }
-    public string ProductInfo { get; set; } = string.Empty;
 }
 
 class Website
@@ -900,19 +747,6 @@ class Website
         builder.Services.AddCors();
         builder.Services.AddHostedService<PriceUpdateService>();
         
-        // Configure JSON serialization to use camelCase for JavaScript compatibility
-        var jsonOptions = new System.Text.Json.JsonSerializerOptions
-        {
-            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
-            WriteIndented = false,
-            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never
-        };
-        
-        builder.Services.ConfigureHttpJsonOptions(options =>
-        {
-            options.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
-        });
-        
         // Disable ASP.NET Core logging to keep console clean
         builder.Logging.ClearProviders();
         
@@ -928,20 +762,16 @@ class Website
         {
             try
             {
-                Console.WriteLine($"[PRODUCT-INFO] Fetching info for URL: {request.Url}");
                 var (productName, price, isManualPrice) = await ProductInformation.GetProductInfoAsync(request.Url);
-                Console.WriteLine($"[PRODUCT-INFO] Success - Name: {productName}, Price: {price}");
                 return Results.Json(new ProductInfoResponse 
                 { 
                     ProductName = productName, 
                     Price = price, 
                     IsManualPrice = isManualPrice 
-                }, jsonOptions);
+                });
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[PRODUCT-INFO] Error: {ex.Message}");
-                Console.WriteLine($"[PRODUCT-INFO] Stack trace: {ex.StackTrace}");
                 return Results.Problem($"Error fetching product info: {ex.Message}");
             }
         });
@@ -973,8 +803,7 @@ class Website
                     null,
                     DateTime.Now,
                     null,
-                    request.IsManualPrice,
-                    request.ProductInfo ?? string.Empty
+                    request.IsManualPrice
                 );
                 
                 list.Add(newGift);
@@ -1021,51 +850,6 @@ class Website
             }
         });
 
-        // Admin API endpoint - Edit gift
-        app.MapPost("/api/edit-gift", async (EditGiftRequest request) =>
-        {
-            try
-            {
-                string fileName = request.Person.ToLower() switch
-                {
-                    "rud" => "Rudgifts.txt",
-                    "katrine" => "Katrinegifts.txt",
-                    "jannic" => "Jannicgifts.txt",
-                    "hjalte" => "Hjaltegifts.txt",
-                    _ => throw new ArgumentException("Invalid person name")
-                };
-
-                string userDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-                string appDataPath = Path.Combine(userDir, "JulegaveListe", fileName);
-                
-                var storage = new FileStorage(appDataPath);
-                var list = await storage.LoadAsync();
-                
-                // Find the gift to edit by OriginalUrl
-                var gift = list.FirstOrDefault(g => g.URl == request.OriginalUrl);
-                if (gift == null)
-                {
-                    return Results.NotFound(new { success = false, message = "Gift not found" });
-                }
-                
-                // Update the gift properties
-                gift.Produkt = request.ProductName;
-                gift.Price = request.Price;
-                gift.URl = request.Url;
-                gift.IsManualPrice = request.IsManualPrice;
-                gift.ProductInfo = request.ProductInfo ?? string.Empty;
-                gift.LastPriceUpdate = DateTime.Now;
-                
-                await storage.SaveAllAsync(list);
-                
-                return Results.Ok(new { success = true, message = "Gift updated successfully" });
-            }
-            catch (Exception ex)
-            {
-                return Results.Problem($"Error editing gift: {ex.Message}");
-            }
-        });
-
         app.MapGet("/gifts/{person}", async (string person) =>
         {
             // Prefer files placed next to the app (publish folder) so containers can include or mount them.
@@ -1094,11 +878,9 @@ class Website
             };
 
             string chosen = candidates.FirstOrDefault(File.Exists) ?? appDataPath;
-            Console.WriteLine($"[API] Loading gifts for {person} from: {chosen}");
             var storage = new FileStorage(chosen);
             var list = await storage.LoadAsync();
-            Console.WriteLine($"[API] Loaded {list.Count} gifts");
-            return Results.Json(list, jsonOptions);
+            return Results.Json(list);
         });
 
     app.MapGet("/gifts", async () =>
@@ -1113,27 +895,18 @@ class Website
             foreach (var name in names)
             {
                 string appDataPath = Path.Combine(appDataDir, name);
+                var candidate = appDataPath;
                 
-                var candidates = new[]
-                {
-                    // Prioritize AppData location (where data is reliably written)
-                    appDataPath,
-                    // container-friendly data directory (mounted volume)
-                    Path.Combine(Path.DirectorySeparatorChar == '/' ? "/data" : "/data", name),
-                    Path.Combine(AppContext.BaseDirectory, name),
-                    Path.Combine(Directory.GetCurrentDirectory(), name),
-                    Path.Combine("C:\\", name)
-                };
+                // Try fallback locations if AppData doesn't exist
+                if (!File.Exists(candidate)) candidate = Path.Combine(Path.DirectorySeparatorChar == '/' ? "/data" : "/data", name);
+                if (!File.Exists(candidate)) candidate = Path.Combine(AppContext.BaseDirectory, name);
+                if (!File.Exists(candidate)) candidate = Path.Combine(Directory.GetCurrentDirectory(), name);
+                if (!File.Exists(candidate)) candidate = Path.Combine("C:\\", name);
                 
-                string chosen = candidates.FirstOrDefault(File.Exists) ?? appDataPath;
-                Console.WriteLine($"[API] Loading {name} from: {chosen}");
-                
-                var s = new FileStorage(chosen);
-                var gifts = await s.LoadAsync();
-                Console.WriteLine($"[API] Loaded {gifts.Count} gifts from {name}");
-                all.AddRange(gifts);
+                var s = new FileStorage(candidate);
+                all.AddRange(await s.LoadAsync());
             }
-            return Results.Json(all, jsonOptions);
+            return Results.Json(all);
         });
 
         // Serve the website.html file at the root on port 5000
