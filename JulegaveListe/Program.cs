@@ -1154,15 +1154,28 @@ class Website
                 var storage = new DatabaseStorage(personKey);
                 var list = await storage.LoadAsync();
                 
-                // Remove items that match the URLs
-                list.RemoveAll(g => request.Urls.Contains(g.URl));
+                Console.WriteLine($"[REMOVE-GIFTS] Before removal: {list.Count} gifts for {personKey}");
+                Console.WriteLine($"[REMOVE-GIFTS] URLs to remove: {string.Join(", ", request.Urls)}");
+                
+                int initialCount = list.Count;
+                
+                // Remove items that match the URLs (trim URLs for comparison)
+                var urlsToRemove = request.Urls.Select(u => u?.Trim()).Where(u => !string.IsNullOrEmpty(u)).ToList();
+                int removedCount = list.RemoveAll(g => urlsToRemove.Contains(g.URl?.Trim()));
+                
+                Console.WriteLine($"[REMOVE-GIFTS] Removed {removedCount} gifts. After removal: {list.Count} gifts");
                 
                 await storage.SaveAllAsync(list);
                 
-                return Results.Ok(new { success = true, message = $"Removed {request.Urls.Count} gift(s)" });
+                // Verify the save
+                var verifyList = await storage.LoadAsync();
+                Console.WriteLine($"[REMOVE-GIFTS] Verified after save: {verifyList.Count} gifts");
+                
+                return Results.Ok(new { success = true, message = $"Removed {removedCount} gift(s)", removedCount, remainingCount = list.Count });
             }
             catch (Exception ex)
             {
+                Console.Error.WriteLine($"[REMOVE-GIFTS] Error: {ex.Message}");
                 return Results.Problem($"Error removing gifts: {ex.Message}");
             }
         });
