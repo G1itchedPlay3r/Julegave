@@ -460,21 +460,34 @@ class DatabaseStorage
         string appDataDir;
         if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
         {
-            // For Linux/Mac: use /var/lib/julegaveliste or fallback to application directory
-            string dataPath = Environment.GetEnvironmentVariable("JULEGAVE_DATA_PATH") 
-                ?? "/var/lib/julegaveliste";
+            // For Linux/Mac: try multiple locations in order of preference
+            string? customPath = Environment.GetEnvironmentVariable("JULEGAVE_DATA_PATH");
+            string[] candidatePaths = customPath != null 
+                ? new[] { customPath, Path.Combine(AppContext.BaseDirectory, "data"), "/tmp/julegaveliste" }
+                : new[] { "/var/lib/julegaveliste", Path.Combine(AppContext.BaseDirectory, "data"), "/tmp/julegaveliste" };
             
-            // If /var/lib is not writable, use app directory
-            try
+            appDataDir = null;
+            foreach (var path in candidatePaths)
             {
-                appDataDir = dataPath;
-                Directory.CreateDirectory(appDataDir);
+                try
+                {
+                    Directory.CreateDirectory(path);
+                    // Test write permissions
+                    string testFile = Path.Combine(path, ".write_test");
+                    File.WriteAllText(testFile, "test");
+                    File.Delete(testFile);
+                    appDataDir = path;
+                    break;
+                }
+                catch
+                {
+                    continue;
+                }
             }
-            catch
+            
+            if (string.IsNullOrEmpty(appDataDir))
             {
-                // Fallback to application directory
-                appDataDir = Path.Combine(AppContext.BaseDirectory, "data");
-                Directory.CreateDirectory(appDataDir);
+                throw new Exception("Could not find a writable directory for database. Tried: " + string.Join(", ", candidatePaths));
             }
         }
         else
@@ -651,21 +664,34 @@ class DatabaseStorage
         string appDataDir;
         if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
         {
-            // For Linux/Mac: use /var/lib/julegaveliste or fallback to application directory
-            string dataPath = Environment.GetEnvironmentVariable("JULEGAVE_DATA_PATH") 
-                ?? "/var/lib/julegaveliste";
+            // For Linux/Mac: try multiple locations in order of preference
+            string? customPath = Environment.GetEnvironmentVariable("JULEGAVE_DATA_PATH");
+            string[] candidatePaths = customPath != null 
+                ? new[] { customPath, Path.Combine(AppContext.BaseDirectory, "data"), "/tmp/julegaveliste" }
+                : new[] { "/var/lib/julegaveliste", Path.Combine(AppContext.BaseDirectory, "data"), "/tmp/julegaveliste" };
             
-            // If /var/lib is not writable, use app directory
-            try
+            appDataDir = null;
+            foreach (var path in candidatePaths)
             {
-                appDataDir = dataPath;
-                Directory.CreateDirectory(appDataDir);
+                try
+                {
+                    Directory.CreateDirectory(path);
+                    // Test write permissions
+                    string testFile = Path.Combine(path, ".write_test");
+                    File.WriteAllText(testFile, "test");
+                    File.Delete(testFile);
+                    appDataDir = path;
+                    break;
+                }
+                catch
+                {
+                    continue;
+                }
             }
-            catch
+            
+            if (string.IsNullOrEmpty(appDataDir))
             {
-                // Fallback to application directory
                 appDataDir = Path.Combine(AppContext.BaseDirectory, "data");
-                Directory.CreateDirectory(appDataDir);
             }
         }
         else
