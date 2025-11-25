@@ -902,7 +902,8 @@ class Website
         var jsonOptions = new System.Text.Json.JsonSerializerOptions
         {
             PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
-            WriteIndented = false
+            WriteIndented = false,
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never
         };
         
         builder.Services.ConfigureHttpJsonOptions(options =>
@@ -1134,8 +1135,14 @@ class Website
             };
 
             string chosen = candidates.FirstOrDefault(File.Exists) ?? appDataPath;
+            Console.WriteLine($"[API] Loading gifts for {person} from: {chosen}");
             var storage = new FileStorage(chosen);
             var list = await storage.LoadAsync();
+            Console.WriteLine($"[API] Loaded {list.Count} gifts");
+            foreach (var gift in list)
+            {
+                Console.WriteLine($"[API] Gift: {gift.Produkt}, IsFavorite={gift.IsFavorite}");
+            }
             return Results.Json(list, jsonOptions);
         });
 
