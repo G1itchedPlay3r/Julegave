@@ -152,6 +152,25 @@
             font-size: 0.95em;
             margin-left: 5px;
         }
+
+        .favorite-star {
+            color: #ffc107;
+            font-size: 1.2em;
+            margin-left: 8px;
+            vertical-align: middle;
+        }
+
+        .product-info {
+            color: #6c757d;
+            font-size: 0.9em;
+            margin-top: 5px;
+            padding-left: 0;
+        }
+
+        #gift-list li.favorite {
+            background: #fff9e6;
+            border-left-color: #ffc107;
+        }
     </style>
 </head>
 <body>
@@ -225,24 +244,47 @@
                                                 return val === true || val === 'true' || val === 'True';
                                             };
 
-                                            listEl.innerHTML = data.map(i => {
+                                            const getIsFavorite = (obj) => {
+                                                const val = obj.IsFavorite ?? obj.isFavorite ?? false;
+                                                return val === true || val === 'true' || val === 'True';
+                                            };
+
+                                            const getProductInfo = (obj) => {
+                                                return getString(obj, 'ProductInfo', 'productInfo');
+                                            };
+
+                                            // Sort: favorites first
+                                            const sortedData = [...data].sort((a, b) => {
+                                                const aFav = getIsFavorite(a);
+                                                const bFav = getIsFavorite(b);
+                                                if (aFav && !bFav) return -1;
+                                                if (!aFav && bFav) return 1;
+                                                return 0;
+                                            });
+
+                                            listEl.innerHTML = sortedData.map(i => {
                                                 const produkt = getString(i, 'Produkt', 'produkt', 'Product', 'product', 'Name', 'name');
                                                 const price = getPrice(i);
                                                 const url = getUrl(i);
                                                 const shopName = getShopName(i);
                                                 const isManualPrice = getIsManualPrice(i);
+                                                const isFavorite = getIsFavorite(i);
+                                                const productInfo = getProductInfo(i);
                                                 const titleHtml = escapeHtml(produkt || 'Ukjent produkt');
                                                 const priceHtml = price ? '<span class="price"> — ' + escapeHtml(String(price)) + ' kr</span>' : '';
                                                 const shopHtml = shopName ? '<span class="shop-name"> (fra ' + escapeHtml(shopName) + ')</span>' : '';
                                                 const manualPriceNote = isManualPrice ? '<span class="manual-price-badge">manuell pris</span>' : '';
+                                                const favoriteStar = isFavorite ? '<span class="favorite-star">⭐</span>' : '';
+                                                const productInfoHtml = productInfo ? '<div class="product-info">📝 ' + escapeHtml(productInfo) + '</div>' : '';
+                                                const liClass = isFavorite ? 'class="favorite"' : '';
 
                                                 if (url) {
                                                     // render product name as a clickable link
                                                     const href = escapeHtml(url);
-                                                    return `<li><a href="${href}" target="_blank" rel="noopener noreferrer">${titleHtml}</a>${priceHtml}${shopHtml}${manualPriceNote}</li>`;
+                                                    return `<li ${liClass}><a href="${href}" target="_blank" rel="noopener noreferrer">${titleHtml}</a>${priceHtml}${shopHtml}${manualPriceNote}${favoriteStar}${productInfoHtml}</li>`;
                                                 }
 
-                                                return `<li>${titleHtml}${priceHtml}${shopHtml}${manualPriceNote}</li>`;
+                                                return `<li ${liClass}>${titleHtml}${priceHtml}${shopHtml}${manualPriceNote}${favoriteStar}${productInfoHtml}</li>`;
                                             }).join('');
                             }
                     buttons.forEach(b => b.classList.toggle('active', b.dataset.person === personKey));

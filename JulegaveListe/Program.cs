@@ -178,43 +178,77 @@ class BrowserAutomation
 
             // Try to find product name - prioritize common e-commerce patterns
             string productName = "Ukendt produkt";
+            
+            // First, try to get from page title (often most reliable)
+            try
+            {
+                string pageTitle = driver.Title;
+                if (!string.IsNullOrWhiteSpace(pageTitle) && !pageTitle.Equals("Forside", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Remove common suffixes like " - Proshop", " | Shop name", etc.
+                    var titleParts = pageTitle.Split(new[] { " - ", " | ", " | " }, StringSplitOptions.None);
+                    if (titleParts.Length > 0 && titleParts[0].Trim().Length > 5)
+                    {
+                        productName = titleParts[0].Trim();
+                        Console.WriteLine($"✓ Found name from title: {productName}");
+                        goto PriceSearch; // Skip other name searches if we found it
+                    }
+                }
+            }
+            catch { }
+            
             string[] nameSelectors = {
-                "[product-display-name]",  // Proshop
+                "h1[product-display-name]",  // Proshop specific
+                "[product-display-name]",  // Proshop attribute
                 "h1[itemprop='name']",  // Schema.org
-                "[itemprop='name']",  // Schema.org any element
                 "h1.product-name",
                 "h1.product-title",
                 ".product-name h1",
                 ".product-title h1",
-                "h1",  // Fallback to any h1
+                "h1.ProductPage_title",  // Some sites use this
+                ".ProductPage h1",  // Product page heading
+                "main h1",  // Main content h1
+                "article h1",  // Article heading
+                "[data-product-name]",  // Data attribute
             };
 
             foreach (var selector in nameSelectors)
             {
                 try
                 {
-                    var element = driver.FindElement(By.CssSelector(selector));
-                    
-                    // Try attribute first (Proshop uses this)
-                    string? attrName = element.GetAttribute("product-display-name");
-                    if (!string.IsNullOrWhiteSpace(attrName))
+                    var elements = driver.FindElements(By.CssSelector(selector));
+                    foreach (var element in elements)
                     {
-                        productName = attrName;
-                        Console.WriteLine($"✓ Found name: {productName}");
-                        break;
-                    }
-                    
-                    // Try text content
-                    string? text = element.Text?.Trim();
-                    if (!string.IsNullOrWhiteSpace(text))
-                    {
-                        productName = text;
-                        Console.WriteLine($"✓ Found name: {productName}");
-                        break;
+                        // Try attribute first (Proshop uses this)
+                        string? attrName = element.GetAttribute("product-display-name") ?? element.GetAttribute("data-product-name");
+                        if (!string.IsNullOrWhiteSpace(attrName) && !attrName.Equals("Forside", StringComparison.OrdinalIgnoreCase))
+                        {
+                            productName = attrName;
+                            Console.WriteLine($"✓ Found name from attribute: {productName}");
+                            goto PriceSearch;
+                        }
+                        
+                        // Try text content
+                        string? text = element.Text?.Trim();
+                        if (!string.IsNullOrWhiteSpace(text) && 
+                            !text.Equals("Forside", StringComparison.OrdinalIgnoreCase) && 
+                            text.Length > 5)
+                        {
+                            productName = text;
+                            Console.WriteLine($"✓ Found name from element: {productName}");
+                            goto PriceSearch;
+                        }
                     }
                 }
                 catch { continue; }
             }
+            
+            if (productName == "Ukendt produkt")
+            {
+                Console.WriteLine("⚠️  Could not find product name on page");
+            }
+
+            PriceSearch:
 
             // Try to find price - prioritize visible price elements
             float price = 0f;
@@ -255,17 +289,45 @@ class BrowserAutomation
                         if (match.Success)
                         {
                             string priceText = match.Groups[1].Value;
-                            // Normalize: ignore decimals (after comma or dot)
-                            // Split on comma or dot and only keep the part before it
+                            
+                            // Handle different formats:
+                            // Danish: "7.777,00" (dot = thousands, comma = decimal)
+                            // English: "7,777.00" (comma = thousands, dot = decimal)
+                            // We want to ignore decimals and keep whole number only
+                            
+                            // If there's a comma, check if it's followed by 2 digits (decimal separator)
                             if (priceText.Contains(","))
                             {
-                                priceText = priceText.Split(',')[0];
+                                var parts = priceText.Split(',');
+                                if (parts.Length > 1 && parts[1].Length <= 2)
+                                {
+                                    // Danish format: comma is decimal separator, ignore it
+                                    priceText = parts[0];
+                                }
+                                else
+                                {
+                                    // Comma is thousands separator, keep all
+                                    priceText = priceText.Replace(",", "");
+                                }
                             }
+                            
+                            // If there's a dot, check if it's followed by 2 digits (decimal separator)
                             if (priceText.Contains("."))
                             {
-                                priceText = priceText.Split('.')[0];
+                                var parts = priceText.Split('.');
+                                if (parts.Length > 1 && parts[1].Length <= 2)
+                                {
+                                    // Dot is decimal separator (English format), ignore decimals
+                                    priceText = parts[0];
+                                }
+                                else
+                                {
+                                    // Dot is thousands separator (Danish format), remove it
+                                    priceText = priceText.Replace(".", "");
+                                }
                             }
-                            priceText = priceText.Replace(" ", "");
+                            
+                            priceText = priceText.Replace(" ", "").Trim();
                             
                             if (float.TryParse(priceText, NumberStyles.Any, CultureInfo.InvariantCulture, out float parsedPrice))
                             {
@@ -351,7 +413,7 @@ class FileStorage
     // effective path used for actual IO; may be switched to a fallback if original is not writable
     string FilePath => _effectiveFilePath;
 
-    // Format per line: <escaped product>|<price-in-invariant-culture>|<escaped url>|<priceRunnerProductId>|<lastPriceUpdate>|<shopName>
+    // Format per line: <escaped product>|<price-in-invariant-culture>|<escaped url>|<priceRunnerProductId>|<lastPriceUpdate>|<shopName>|<isManualPrice>|<isFavorite>|<productInfo>
     private static string Escape(string s) => s?.Replace("\\", "\\\\").Replace("|", "\\|") ?? string.Empty;
     private static string Unescape(string s) => s?.Replace("\\|", "|").Replace("\\\\", "\\") ?? string.Empty;
 
@@ -441,6 +503,9 @@ class FileStorage
                     string priceRunnerIdPart = parts.Length >= 4 ? Unescape(parts[3]) : string.Empty;
                     string lastUpdatePart = parts.Length >= 5 ? parts[4] : string.Empty;
                     string shopNamePart = parts.Length >= 6 ? Unescape(parts[5]) : string.Empty;
+                    bool isManualPrice = parts.Length >= 7 && bool.TryParse(parts[6], out bool mp) && mp;
+                    bool isFavorite = parts.Length >= 8 && bool.TryParse(parts[7], out bool fav) && fav;
+                    string productInfo = parts.Length >= 9 ? Unescape(parts[8]) : string.Empty;
 
                     if (!float.TryParse(pricePart, NumberStyles.Any, CultureInfo.InvariantCulture, out float price))
                     {
@@ -454,7 +519,7 @@ class FileStorage
                         DateTime.TryParse(lastUpdatePart, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out lastUpdate);
                     }
 
-                    list.Add(new GiftInfo(product, price, urlPart, priceRunnerIdPart, lastUpdate, shopNamePart));
+                    list.Add(new GiftInfo(product, price, urlPart, priceRunnerIdPart, lastUpdate, shopNamePart, isManualPrice, isFavorite, productInfo));
                 }
             }
         }
@@ -468,7 +533,7 @@ class FileStorage
 
     public async Task AppendAsync(GiftInfo gift)
     {
-        string line = $"{Escape(gift.Produkt)}|{gift.Price.ToString(CultureInfo.InvariantCulture)}|{Escape(gift.URl)}|{Escape(gift.PriceRunnerProductId)}|{gift.LastPriceUpdate.ToString("o", CultureInfo.InvariantCulture)}|{Escape(gift.ShopName)}|{gift.IsManualPrice}{Environment.NewLine}";
+        string line = $"{Escape(gift.Produkt)}|{gift.Price.ToString(CultureInfo.InvariantCulture)}|{Escape(gift.URl)}|{Escape(gift.PriceRunnerProductId)}|{gift.LastPriceUpdate.ToString("o", CultureInfo.InvariantCulture)}|{Escape(gift.ShopName)}|{gift.IsManualPrice}|{gift.IsFavorite}|{Escape(gift.ProductInfo)}{Environment.NewLine}";
 
         bool primarySuccess = false;
         
@@ -538,6 +603,12 @@ class FileStorage
             sb.Append(g.LastPriceUpdate.ToString("o", CultureInfo.InvariantCulture));
             sb.Append('|');
             sb.Append(Escape(g.ShopName ?? string.Empty));
+            sb.Append('|');
+            sb.Append(g.IsManualPrice);
+            sb.Append('|');
+            sb.Append(g.IsFavorite);
+            sb.Append('|');
+            sb.Append(Escape(g.ProductInfo ?? string.Empty));
             sb.AppendLine();
         }
 
@@ -687,7 +758,7 @@ class PriceUpdateService : BackgroundService
 
 public class GiftInfo
 {
-    public GiftInfo(string produkt, float price, string uRl, string? priceRunnerProductId = null, DateTime? lastPriceUpdate = null, string? shopName = null, bool isManualPrice = false)
+    public GiftInfo(string produkt, float price, string uRl, string? priceRunnerProductId = null, DateTime? lastPriceUpdate = null, string? shopName = null, bool isManualPrice = false, bool isFavorite = false, string? productInfo = null)
     {
         Produkt = produkt;
         Price = price;
@@ -696,6 +767,8 @@ public class GiftInfo
         LastPriceUpdate = lastPriceUpdate ?? DateTime.MinValue;
         ShopName = shopName ?? string.Empty;
         IsManualPrice = isManualPrice;
+        IsFavorite = isFavorite;
+        ProductInfo = productInfo ?? string.Empty;
     }
     public string Produkt { get; set; }
     public float Price { get; set; }
@@ -704,6 +777,8 @@ public class GiftInfo
     public DateTime LastPriceUpdate { get; set; }
     public string ShopName { get; set; }
     public bool IsManualPrice { get; set; }
+    public bool IsFavorite { get; set; }
+    public string ProductInfo { get; set; }
 }
 
 public class ProductInfoRequest
@@ -725,12 +800,32 @@ public class AddGiftRequest
     public float Price { get; set; }
     public string Url { get; set; } = string.Empty;
     public bool IsManualPrice { get; set; }
+    public string ProductInfo { get; set; } = string.Empty;
+    public bool IsFavorite { get; set; }
 }
 
 public class RemoveGiftsRequest
 {
     public string Person { get; set; } = string.Empty;
     public List<string> Urls { get; set; } = new List<string>();
+}
+
+public class EditGiftRequest
+{
+    public string Person { get; set; } = string.Empty;
+    public string OriginalUrl { get; set; } = string.Empty;
+    public string ProductName { get; set; } = string.Empty;
+    public float Price { get; set; }
+    public string Url { get; set; } = string.Empty;
+    public bool IsManualPrice { get; set; }
+    public string ProductInfo { get; set; } = string.Empty;
+    public bool IsFavorite { get; set; }
+}
+
+public class ToggleFavoriteRequest
+{
+    public string Person { get; set; } = string.Empty;
+    public string Url { get; set; } = string.Empty;
 }
 
 class Website
@@ -803,7 +898,9 @@ class Website
                     null,
                     DateTime.Now,
                     null,
-                    request.IsManualPrice
+                    request.IsManualPrice,
+                    request.IsFavorite,
+                    request.ProductInfo ?? string.Empty
                 );
                 
                 list.Add(newGift);
@@ -847,6 +944,92 @@ class Website
             catch (Exception ex)
             {
                 return Results.Problem($"Error removing gifts: {ex.Message}");
+            }
+        });
+
+        // Admin API endpoint - Edit gift
+        app.MapPost("/api/edit-gift", async (EditGiftRequest request) =>
+        {
+            try
+            {
+                string fileName = request.Person.ToLower() switch
+                {
+                    "rud" => "Rudgifts.txt",
+                    "katrine" => "Katrinegifts.txt",
+                    "jannic" => "Jannicgifts.txt",
+                    "hjalte" => "Hjaltegifts.txt",
+                    _ => throw new ArgumentException("Invalid person name")
+                };
+
+                string userDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                string appDataPath = Path.Combine(userDir, "JulegaveListe", fileName);
+                
+                var storage = new FileStorage(appDataPath);
+                var list = await storage.LoadAsync();
+                
+                // Find the gift to edit by OriginalUrl
+                var gift = list.FirstOrDefault(g => g.URl == request.OriginalUrl);
+                if (gift == null)
+                {
+                    return Results.NotFound(new { success = false, message = "Gift not found" });
+                }
+                
+                // Update the gift properties
+                gift.Produkt = request.ProductName;
+                gift.Price = request.Price;
+                gift.URl = request.Url;
+                gift.IsManualPrice = request.IsManualPrice;
+                gift.ProductInfo = request.ProductInfo ?? string.Empty;
+                gift.IsFavorite = request.IsFavorite;
+                gift.LastPriceUpdate = DateTime.Now;
+                
+                await storage.SaveAllAsync(list);
+                
+                return Results.Ok(new { success = true, message = "Gift updated successfully" });
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem($"Error editing gift: {ex.Message}");
+            }
+        });
+
+        // Admin API endpoint - Toggle favorite
+        app.MapPost("/api/toggle-favorite", async (ToggleFavoriteRequest request) =>
+        {
+            try
+            {
+                string fileName = request.Person.ToLower() switch
+                {
+                    "rud" => "Rudgifts.txt",
+                    "katrine" => "Katrinegifts.txt",
+                    "jannic" => "Jannicgifts.txt",
+                    "hjalte" => "Hjaltegifts.txt",
+                    _ => throw new ArgumentException("Invalid person name")
+                };
+
+                string userDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                string appDataPath = Path.Combine(userDir, "JulegaveListe", fileName);
+                
+                var storage = new FileStorage(appDataPath);
+                var list = await storage.LoadAsync();
+                
+                // Find the gift to toggle by URL
+                var gift = list.FirstOrDefault(g => g.URl == request.Url);
+                if (gift == null)
+                {
+                    return Results.NotFound(new { success = false, message = "Gift not found" });
+                }
+                
+                // Toggle favorite status
+                gift.IsFavorite = !gift.IsFavorite;
+                
+                await storage.SaveAllAsync(list);
+                
+                return Results.Ok(new { success = true, isFavorite = gift.IsFavorite });
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem($"Error toggling favorite: {ex.Message}");
             }
         });
 
