@@ -32,6 +32,23 @@ class BrowserAutomation
     {
         lock (_lock)
         {
+            // Check if driver is valid, if not recreate it
+            if (_driver != null)
+            {
+                try
+                {
+                    // Test if session is still valid
+                    var _ = _driver.WindowHandles;
+                }
+                catch
+                {
+                    // Session invalid, dispose and recreate
+                    try { _driver.Quit(); } catch { }
+                    try { _driver.Dispose(); } catch { }
+                    _driver = null;
+                }
+            }
+            
             if (_driver == null)
             {
                 try
@@ -166,15 +183,18 @@ class BrowserAutomation
 
     public static async Task<(string productName, float price, bool isManualPrice)> GetProductInfoWithBrowser(string url)
     {
-        var driver = GetDriver();
-        
-        try
+        // Retry logic in case of session errors
+        for (int attempt = 0; attempt < 2; attempt++)
         {
-            Console.WriteLine($"Loading page with browser...");
-            driver.Navigate().GoToUrl(url);
-            
-            // Wait for page to fully load (including JavaScript)
-            await Task.Delay(3000);
+            try
+            {
+                var driver = GetDriver();
+                
+                Console.WriteLine($"Loading page with browser...");
+                driver.Navigate().GoToUrl(url);
+                
+                // Wait for page to fully load (including JavaScript)
+                await Task.Delay(3000);
 
             // Try to find product name - prioritize common e-commerce patterns
             string productName = "Ukendt produkt";
@@ -353,12 +373,21 @@ class BrowserAutomation
             }
 
             return (productName, price, isManualPrice);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ Browser error (attempt {attempt + 1}): {ex.Message}");
+                if (attempt == 1)
+                {
+                    throw;
+                }
+                // On first attempt failure, retry with fresh driver
+                await Task.Delay(1000);
+            }
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"❌ Browser error: {ex.Message}");
-            throw;
-        }
+        
+        // Should never reach here due to throw above
+        throw new Exception("Failed to get product info after retries");
     }
 }
 class ProductInformation 
