@@ -456,68 +456,54 @@ class DatabaseStorage
         if (string.IsNullOrWhiteSpace(person)) throw new ArgumentNullException(nameof(person));
         _person = person.ToLowerInvariant();
         
-        // Use project folder for database storage
-        string projectDir = AppContext.BaseDirectory;
-        _dbPath = Path.Combine(projectDir, "gifts.db");
-        
-        Console.WriteLine($"[DATABASE] Using database path: {_dbPath}");
-        
-        // Check if database exists in old AppData location and migrate it
-        MigrateFromAppDataIfNeeded();
-        
-        InitializeDatabase();
-    }
-    
-    private void MigrateFromAppDataIfNeeded()
-    {
-        // If database already exists in project folder, no migration needed
-        if (File.Exists(_dbPath))
+        // Get database directory - Linux/Unix compatible
+        string appDataDir;
+        if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
         {
-            return;
-        }
-        
-        // Check old AppData location
-        string? oldDbPath = null;
-        try
-        {
-            if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+            // For Linux/Mac: try multiple locations in order of preference
+            string? customPath = Environment.GetEnvironmentVariable("JULEGAVE_DATA_PATH");
+            string[] candidatePaths = customPath != null 
+                ? new[] { customPath, Path.Combine(AppContext.BaseDirectory, "data"), "/tmp/julegaveliste" }
+                : new[] { "/var/lib/julegaveliste", Path.Combine(AppContext.BaseDirectory, "data"), "/tmp/julegaveliste" };
+            
+            appDataDir = null;
+            foreach (var path in candidatePaths)
             {
-                // Check common Linux locations
-                string[] oldPaths = {
-                    "/var/lib/julegaveliste/gifts.db",
-                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "JulegaveListe", "gifts.db")
-                };
-                
-                foreach (var path in oldPaths)
+                try
                 {
-                    if (File.Exists(path))
-                    {
-                        oldDbPath = path;
-                        break;
-                    }
+                    Directory.CreateDirectory(path);
+                    // Test write permissions
+                    string testFile = Path.Combine(path, ".write_test");
+                    File.WriteAllText(testFile, "test");
+                    File.Delete(testFile);
+                    appDataDir = path;
+                    break;
+                }
+                catch
+                {
+                    continue;
                 }
             }
-            else
-            {
-                // Windows AppData location
-                oldDbPath = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "JulegaveListe",
-                    "gifts.db"
-                );
-            }
             
-            if (oldDbPath != null && File.Exists(oldDbPath))
+            if (string.IsNullOrEmpty(appDataDir))
             {
-                Console.WriteLine($"[DATABASE] Migrating database from {oldDbPath} to {_dbPath}");
-                File.Copy(oldDbPath, _dbPath, overwrite: false);
-                Console.WriteLine($"[DATABASE] Migration successful");
+                throw new Exception("Could not find a writable directory for database. Tried: " + string.Join(", ", candidatePaths));
             }
         }
-        catch (Exception ex)
+        else
         {
-            Console.WriteLine($"[DATABASE] Migration failed (will start fresh): {ex.Message}");
+            // Windows: use LocalApplicationData
+            appDataDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "JulegaveListe"
+            );
+            Directory.CreateDirectory(appDataDir);
         }
+        
+        _dbPath = Path.Combine(appDataDir, "gifts.db");
+        Console.WriteLine($"[DATABASE] Using database path: {_dbPath}");
+        
+        InitializeDatabase();
     }
 
     private void InitializeDatabase()
@@ -675,8 +661,48 @@ class DatabaseStorage
 
     public static string GetDatabasePath()
     {
-        // Database is stored in project folder
-        return Path.Combine(AppContext.BaseDirectory, "gifts.db");
+        string appDataDir;
+        if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+        {
+            // For Linux/Mac: try multiple locations in order of preference
+            string? customPath = Environment.GetEnvironmentVariable("JULEGAVE_DATA_PATH");
+            string[] candidatePaths = customPath != null 
+                ? new[] { customPath, Path.Combine(AppContext.BaseDirectory, "data"), "/tmp/julegaveliste" }
+                : new[] { "/var/lib/julegaveliste", Path.Combine(AppContext.BaseDirectory, "data"), "/tmp/julegaveliste" };
+            
+            appDataDir = null;
+            foreach (var path in candidatePaths)
+            {
+                try
+                {
+                    Directory.CreateDirectory(path);
+                    // Test write permissions
+                    string testFile = Path.Combine(path, ".write_test");
+                    File.WriteAllText(testFile, "test");
+                    File.Delete(testFile);
+                    appDataDir = path;
+                    break;
+                }
+                catch
+                {
+                    continue;
+                }
+            }
+            
+            if (string.IsNullOrEmpty(appDataDir))
+            {
+                appDataDir = Path.Combine(AppContext.BaseDirectory, "data");
+            }
+        }
+        else
+        {
+            // Windows: use LocalApplicationData
+            appDataDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "JulegaveListe"
+            );
+        }
+        return Path.Combine(appDataDir, "gifts.db");
     }
 }
 
@@ -1336,16 +1362,17 @@ class Website
                 return Results.Redirect("/admin");
             }
 
-            // Try several likely locations for website.html - prioritize deployment directory
+            // Try several likely locations for website.html (project root when running from IDE, current dir when published, and a known workspace path).
             var candidates = new[]
             {
-                Path.Combine(AppContext.BaseDirectory, "website.html"),  // Deployed with app
-                Path.Combine(Directory.GetCurrentDirectory(), "website.html"),  // Current directory
-                "/home/rud/Julegave/JulegaveListe/website.html",  // Linux deployment actual path
-                Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "website.html"),  // IDE debug
-                Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "website.html"),  // IDE debug alternate
-                @"c:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\website.html",  // Windows dev
-                "/home/rud/Julegave/website.html"  // Linux alternate
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "website.html")),
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "website.html")),
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "website.html")),
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "website.html")),
+                Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "website.html")),
+                @"c:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\website.html",
+                // fallback explicit workspace path used in this project
+                Path.GetFullPath(@"\Julegave\website.html")
             };
 
             foreach (var p in candidates)
@@ -1372,13 +1399,13 @@ class Website
         {
             var candidates = new[]
             {
-                Path.Combine(AppContext.BaseDirectory, "admin.html"),  // Deployed with app
-                Path.Combine(Directory.GetCurrentDirectory(), "admin.html"),  // Current directory
-                "/home/rud/Julegave/JulegaveListe/admin.html",  // Linux deployment actual path
-                Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "admin.html"),  // IDE debug
-                Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "admin.html"),  // IDE debug alternate
-                @"c:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\admin.html",  // Windows dev
-                "/home/rud/Julegave/admin.html"  // Linux alternate
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "admin.html")),
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "admin.html")),
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "admin.html")),
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "admin.html")),
+                Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "admin.html")),
+                @"c:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\admin.html",
+                Path.GetFullPath(@"\Julegave\admin.html")
             };
 
             foreach (var p in candidates)
