@@ -257,7 +257,6 @@
             <button class="btn btn-add" onclick="showAddForm()">➕ Tilføj gave</button>
             <button class="btn btn-remove" onclick="showRemoveForm()">🗑️ Fjern gave</button>
             <button class="btn btn-add" onclick="showEditForm()">✏️ Rediger gave</button>
-            <button class="btn btn-add" onclick="migrateToSqlite()" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">🔄 Migrer til SQLite</button>
         </div>
 
         <!-- Add Gift Form -->
@@ -823,70 +822,6 @@
         function cancelEdit() {
             document.getElementById('editGiftDetails').classList.add('hidden');
             currentEditGift = null;
-        }
-
-        async function migrateToSqlite() {
-            if (!confirm('Dette vil migrere alle gaver fra TXT filer til SQLite database. Gamle TXT filer vil blive slettet efter vellykket migration. Fortsæt?')) {
-                return;
-            }
-
-            clearMessage();
-            showLoading(true);
-
-            try {
-                const response = await fetch(`/api/migrate-to-sqlite`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
-
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(errorText || `HTTP error ${response.status}`);
-                }
-
-                const result = await response.json();
-                
-                console.log('[MIGRATION] Result:', result);
-
-                if (result.success) {
-                    let message = '<div style="text-align: left;"><h3>✓ Migration gennemført!</h3>';
-                    
-                    if (result.migrated && result.migrated.length > 0) {
-                        message += '<h4>Migreret:</h4><ul>';
-                        result.migrated.forEach(m => {
-                            message += `<li><strong>${m.person}</strong>: ${m.giftsCount} gaver - ${m.message}</li>`;
-                        });
-                        message += '</ul>';
-                    }
-                    
-                    if (result.filesDeleted && result.filesDeleted.length > 0) {
-                        message += '<h4>Slettede filer:</h4><ul>';
-                        result.filesDeleted.forEach(f => {
-                            message += `<li>${f}</li>`;
-                        });
-                        message += '</ul>';
-                    }
-                    
-                    if (result.errors && result.errors.length > 0) {
-                        message += '<h4>Fejl:</h4><ul>';
-                        result.errors.forEach(e => {
-                            message += `<li style="color: #d9534f;">${e}</li>`;
-                        });
-                        message += '</ul>';
-                    }
-                    
-                    message += '</div>';
-                    showMessage(message, 'success');
-                } else {
-                    showMessage('Migration fejlede. Se konsol for detaljer.', 'error');
-                }
-            } catch (error) {
-                showMessage(`Fejl under migration: ${error.message}`, 'error');
-            } finally {
-                showLoading(false);
-            }
         }
     </script>
 </body>

@@ -1457,6 +1457,120 @@ class Website
         Console.WriteLine("Background price updates enabled (every 12 hours)");
         Console.WriteLine("\nPress Ctrl+C to stop the server.\n");
         
+        // Auto-migrate TXT files to SQLite on startup
+        await AutoMigrateToSqlite();
+        
         await StartApiAsync();
+    }
+
+    static async Task AutoMigrateToSqlite()
+    {
+        try
+        {
+            Console.WriteLine("[AUTO-MIGRATION] Checking for TXT files to migrate...");
+            
+            string[] persons = { "rud", "katrine", "jannic", "hjalte" };
+            string[] fileNames = { "Rudgifts.txt", "Katrinegifts.txt", "Jannicgifts.txt", "Hjaltegifts.txt" };
+
+            string userDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string appDataDir = Path.Combine(userDir, "JulegaveListe");
+
+            bool anyMigrated = false;
+
+            for (int i = 0; i < persons.Length; i++)
+            {
+                string person = persons[i];
+                string fileName = fileNames[i];
+                
+                try
+                {
+                    // Try to find the txt file in various locations
+                    var candidates = new[]
+                    {
+                        Path.Combine(appDataDir, fileName),
+                        Path.Combine(AppContext.BaseDirectory, fileName),
+                        Path.Combine(Directory.GetCurrentDirectory(), fileName),
+                        Path.Combine("C:\\", fileName)
+                    };
+
+                    string? txtFilePath = candidates.FirstOrDefault(File.Exists);
+                    
+                    if (txtFilePath == null)
+                    {
+                        continue;
+                    }
+
+                    Console.WriteLine($"[AUTO-MIGRATION] Found {fileName} at: {txtFilePath}");
+                    
+                    // Load from txt file
+                    var fileStorage = new FileStorage(txtFilePath);
+                    var gifts = await fileStorage.LoadAsync();
+                    
+                    Console.WriteLine($"[AUTO-MIGRATION] Loaded {gifts.Count} gifts for {person}");
+                    
+                    // Ensure all fields have default values if missing
+                    foreach (var gift in gifts)
+                    {
+                        gift.Produkt = gift.Produkt ?? string.Empty;
+                        gift.URl = gift.URl ?? string.Empty;
+                        gift.PriceRunnerProductId = gift.PriceRunnerProductId ?? string.Empty;
+                        gift.ShopName = gift.ShopName ?? string.Empty;
+                        gift.ProductInfo = gift.ProductInfo ?? string.Empty;
+                        if (gift.LastPriceUpdate == DateTime.MinValue)
+                        {
+                            gift.LastPriceUpdate = DateTime.Now;
+                        }
+                    }
+                    
+                    // Save to database
+                    var dbStorage = new DatabaseStorage(person);
+                    await dbStorage.SaveAllAsync(gifts);
+                    
+                    // Verify migration
+                    var verifyGifts = await dbStorage.LoadAsync();
+                    
+                    if (verifyGifts.Count != gifts.Count)
+                    {
+                        Console.WriteLine($"[AUTO-MIGRATION] ⚠️  Verification failed for {person}. Expected {gifts.Count} gifts, got {verifyGifts.Count}");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[AUTO-MIGRATION] ✓ Verified {verifyGifts.Count} gifts for {person}");
+                        
+                        // Delete txt file if migration successful
+                        try
+                        {
+                            File.Delete(txtFilePath);
+                            Console.WriteLine($"[AUTO-MIGRATION] ✓ Deleted {txtFilePath}");
+                            anyMigrated = true;
+                        }
+                        catch (Exception deleteEx)
+                        {
+                            Console.WriteLine($"[AUTO-MIGRATION] ⚠️  Could not delete {txtFilePath}: {deleteEx.Message}");
+                        }
+                    }
+                }
+                catch (Exception personEx)
+                {
+                    Console.WriteLine($"[AUTO-MIGRATION] ⚠️  Error migrating {person}: {personEx.Message}");
+                }
+            }
+
+            if (anyMigrated)
+            {
+                Console.WriteLine("[AUTO-MIGRATION] ✓ Migration completed successfully!");
+            }
+            else
+            {
+                Console.WriteLine("[AUTO-MIGRATION] No TXT files found to migrate.");
+            }
+            
+            Console.WriteLine();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[AUTO-MIGRATION] ⚠️  Error during migration: {ex.Message}");
+            Console.WriteLine();
+        }
     }
 }
