@@ -1336,17 +1336,16 @@ class Website
                 return Results.Redirect("/admin");
             }
 
-            // Try several likely locations for website.html (project root when running from IDE, current dir when published, and a known workspace path).
+            // Try several likely locations for website.html - prioritize deployment directory
             var candidates = new[]
             {
-                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "website.html")),
-                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "website.html")),
-                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "website.html")),
-                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "website.html")),
-                Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "website.html")),
-                @"c:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\website.html",
-                // fallback explicit workspace path used in this project
-                Path.GetFullPath(@"\Julegave\website.html")
+                Path.Combine(AppContext.BaseDirectory, "website.html"),  // Deployed with app
+                Path.Combine(Directory.GetCurrentDirectory(), "website.html"),  // Current directory
+                Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "website.html"),  // IDE debug
+                Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "website.html"),  // IDE debug alternate
+                @"c:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\website.html",  // Windows dev
+                "/home/rud/Julegave/website.html",  // Linux deployment
+                "/home/rud/Julegave/JulegaveListe/website.html"  // Linux alternate
             };
 
             foreach (var p in candidates)
@@ -1373,13 +1372,13 @@ class Website
         {
             var candidates = new[]
             {
-                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "admin.html")),
-                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "admin.html")),
-                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "admin.html")),
-                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "admin.html")),
-                Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "admin.html")),
-                @"c:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\admin.html",
-                Path.GetFullPath(@"\Julegave\admin.html")
+                Path.Combine(AppContext.BaseDirectory, "admin.html"),  // Deployed with app
+                Path.Combine(Directory.GetCurrentDirectory(), "admin.html"),  // Current directory
+                Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "admin.html"),  // IDE debug
+                Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "admin.html"),  // IDE debug alternate
+                @"c:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\admin.html",  // Windows dev
+                "/home/rud/Julegave/admin.html",  // Linux deployment
+                "/home/rud/Julegave/JulegaveListe/admin.html"  // Linux alternate
             };
 
             foreach (var p in candidates)
