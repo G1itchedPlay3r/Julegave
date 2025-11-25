@@ -456,13 +456,39 @@ class DatabaseStorage
         if (string.IsNullOrWhiteSpace(person)) throw new ArgumentNullException(nameof(person));
         _person = person.ToLowerInvariant();
         
-        // Store database in AppData
-        string appDataDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "JulegaveListe"
-        );
-        Directory.CreateDirectory(appDataDir);
+        // Get database directory - Linux/Unix compatible
+        string appDataDir;
+        if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+        {
+            // For Linux/Mac: use /var/lib/julegaveliste or fallback to application directory
+            string dataPath = Environment.GetEnvironmentVariable("JULEGAVE_DATA_PATH") 
+                ?? "/var/lib/julegaveliste";
+            
+            // If /var/lib is not writable, use app directory
+            try
+            {
+                appDataDir = dataPath;
+                Directory.CreateDirectory(appDataDir);
+            }
+            catch
+            {
+                // Fallback to application directory
+                appDataDir = Path.Combine(AppContext.BaseDirectory, "data");
+                Directory.CreateDirectory(appDataDir);
+            }
+        }
+        else
+        {
+            // Windows: use LocalApplicationData
+            appDataDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "JulegaveListe"
+            );
+            Directory.CreateDirectory(appDataDir);
+        }
+        
         _dbPath = Path.Combine(appDataDir, "gifts.db");
+        Console.WriteLine($"[DATABASE] Using database path: {_dbPath}");
         
         InitializeDatabase();
     }
@@ -622,10 +648,34 @@ class DatabaseStorage
 
     public static string GetDatabasePath()
     {
-        string appDataDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "JulegaveListe"
-        );
+        string appDataDir;
+        if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+        {
+            // For Linux/Mac: use /var/lib/julegaveliste or fallback to application directory
+            string dataPath = Environment.GetEnvironmentVariable("JULEGAVE_DATA_PATH") 
+                ?? "/var/lib/julegaveliste";
+            
+            // If /var/lib is not writable, use app directory
+            try
+            {
+                appDataDir = dataPath;
+                Directory.CreateDirectory(appDataDir);
+            }
+            catch
+            {
+                // Fallback to application directory
+                appDataDir = Path.Combine(AppContext.BaseDirectory, "data");
+                Directory.CreateDirectory(appDataDir);
+            }
+        }
+        else
+        {
+            // Windows: use LocalApplicationData
+            appDataDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "JulegaveListe"
+            );
+        }
         return Path.Combine(appDataDir, "gifts.db");
     }
 }
