@@ -37,12 +37,15 @@ class BrowserAutomation
             {
                 try
                 {
-                    // Test if session is still valid
+                    // Test if session is still valid by checking multiple properties
                     var _ = _driver.WindowHandles;
+                    var __ = _driver.CurrentWindowHandle;
+                    // If we can access these, session is valid
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Session invalid, dispose and recreate
+                    // Session invalid (browser closed, session expired, etc.)
+                    Console.WriteLine($"⚠️  WebDriver session invalid ({ex.GetType().Name}), recreating...");
                     try { _driver.Quit(); } catch { }
                     try { _driver.Dispose(); } catch { }
                     _driver = null;
@@ -925,7 +928,9 @@ class Website
         {
             try
             {
+                Console.WriteLine($"[PRODUCT-INFO] Fetching info for URL: {request.Url}");
                 var (productName, price, isManualPrice) = await ProductInformation.GetProductInfoAsync(request.Url);
+                Console.WriteLine($"[PRODUCT-INFO] Success - Name: {productName}, Price: {price}");
                 return Results.Json(new ProductInfoResponse 
                 { 
                     ProductName = productName, 
@@ -935,6 +940,8 @@ class Website
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"[PRODUCT-INFO] Error: {ex.Message}");
+                Console.WriteLine($"[PRODUCT-INFO] Stack trace: {ex.StackTrace}");
                 return Results.Problem($"Error fetching product info: {ex.Message}");
             }
         });
