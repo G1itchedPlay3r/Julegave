@@ -1158,16 +1158,25 @@ class Website
             foreach (var name in names)
             {
                 string appDataPath = Path.Combine(appDataDir, name);
-                var candidate = appDataPath;
                 
-                // Try fallback locations if AppData doesn't exist
-                if (!File.Exists(candidate)) candidate = Path.Combine(Path.DirectorySeparatorChar == '/' ? "/data" : "/data", name);
-                if (!File.Exists(candidate)) candidate = Path.Combine(AppContext.BaseDirectory, name);
-                if (!File.Exists(candidate)) candidate = Path.Combine(Directory.GetCurrentDirectory(), name);
-                if (!File.Exists(candidate)) candidate = Path.Combine("C:\\", name);
+                var candidates = new[]
+                {
+                    // Prioritize AppData location (where data is reliably written)
+                    appDataPath,
+                    // container-friendly data directory (mounted volume)
+                    Path.Combine(Path.DirectorySeparatorChar == '/' ? "/data" : "/data", name),
+                    Path.Combine(AppContext.BaseDirectory, name),
+                    Path.Combine(Directory.GetCurrentDirectory(), name),
+                    Path.Combine("C:\\", name)
+                };
                 
-                var s = new FileStorage(candidate);
-                all.AddRange(await s.LoadAsync());
+                string chosen = candidates.FirstOrDefault(File.Exists) ?? appDataPath;
+                Console.WriteLine($"[API] Loading {name} from: {chosen}");
+                
+                var s = new FileStorage(chosen);
+                var gifts = await s.LoadAsync();
+                Console.WriteLine($"[API] Loaded {gifts.Count} gifts from {name}");
+                all.AddRange(gifts);
             }
             return Results.Json(all, jsonOptions);
         });
