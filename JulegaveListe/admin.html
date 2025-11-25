@@ -616,12 +616,16 @@
 
                 let html = '<div class="item-list">';
                 gifts.forEach((gift, index) => {
+                    const giftUrl = gift.url || gift.urL || gift.URl || gift.Url || '';
+                    const giftName = gift.produkt || gift.Produkt || 'Ukendt produkt';
+                    const giftPrice = gift.price || gift.Price || 0;
+                    
                     html += `
                         <div class="item-checkbox">
-                            <input type="checkbox" id="gift-${index}" data-url="${gift.uRl}">
+                            <input type="checkbox" id="gift-${index}" data-url="${escapeHtml(giftUrl)}">
                             <label for="gift-${index}" class="item-info">
-                                <div class="item-name">${gift.produkt}</div>
-                                <div class="item-price">${gift.price} kr</div>
+                                <div class="item-name">${escapeHtml(giftName)}</div>
+                                <div class="item-price">${giftPrice} kr</div>
                             </label>
                         </div>
                     `;
