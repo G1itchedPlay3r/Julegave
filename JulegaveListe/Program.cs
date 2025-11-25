@@ -830,7 +830,10 @@ public class GiftInfo
     public DateTime LastPriceUpdate { get; set; }
     public string ShopName { get; set; }
     public bool IsManualPrice { get; set; }
+    
+    [JsonPropertyName("isFavorite")]
     public bool IsFavorite { get; set; }
+    
     public string ProductInfo { get; set; }
 }
 
@@ -941,6 +944,9 @@ class Website
         {
             try
             {
+                // Debug logging
+                Console.WriteLine($"[ADD-GIFT] Received IsFavorite: {request.IsFavorite}");
+                
                 string fileName = request.Person.ToLower() switch
                 {
                     "rud" => "Rudgifts.txt",
@@ -967,6 +973,8 @@ class Website
                     request.IsFavorite,
                     request.ProductInfo ?? string.Empty
                 );
+                
+                Console.WriteLine($"[ADD-GIFT] Created GiftInfo with IsFavorite: {newGift.IsFavorite}");
                 
                 list.Add(newGift);
                 await storage.SaveAllAsync(list);

@@ -527,20 +527,24 @@
             showLoading(true);
 
             try {
+                const requestBody = {
+                    person: person,
+                    productName: productName,
+                    price: price,
+                    url: url,
+                    isManualPrice: isManualPrice || price !== parseFloat(document.getElementById('productPrice').value),
+                    productInfo: productInfo,
+                    isFavorite: isFavorite
+                };
+                
+                console.log('[ADD-GIFT] Sending request:', requestBody);
+                
                 const response = await fetch(`/api/add-gift`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({
-                        person: person,
-                        productName: productName,
-                        price: price,
-                        url: url,
-                        isManualPrice: isManualPrice || price !== parseFloat(document.getElementById('productPrice').value),
-                        productInfo: productInfo,
-                        isFavorite: isFavorite
-                    })
+                    body: JSON.stringify(requestBody)
                 });
 
                 if (!response.ok) {
@@ -751,6 +755,8 @@
             const url = document.getElementById('editProductUrl').value.trim();
             const productInfo = document.getElementById('editProductInfo').value.trim();
             const isFavorite = document.getElementById('editIsFavorite').checked;
+            
+            console.log('[EDIT-GIFT] isFavorite checkbox value:', isFavorite);
 
             if (!productName || !url) {
                 showMessage('Udfyld venligst alle felter', 'error');
@@ -766,21 +772,25 @@
             showLoading(true);
 
             try {
+                const requestBody = {
+                    person: currentEditPerson,
+                    originalUrl: currentEditGift.url,
+                    productName: productName,
+                    price: price,
+                    url: url,
+                    isManualPrice: currentEditGift.isManualPrice,
+                    productInfo: productInfo,
+                    isFavorite: isFavorite
+                };
+                
+                console.log('[EDIT-GIFT] Sending request:', requestBody);
+                
                 const response = await fetch(`/api/edit-gift`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({
-                        person: currentEditPerson,
-                        originalUrl: currentEditGift.url,
-                        productName: productName,
-                        price: price,
-                        url: url,
-                        isManualPrice: currentEditGift.isManualPrice,
-                        productInfo: productInfo,
-                        isFavorite: isFavorite
-                    })
+                    body: JSON.stringify(requestBody)
                 });
 
                 if (!response.ok) {
