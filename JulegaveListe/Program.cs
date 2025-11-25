@@ -501,6 +501,7 @@ class FileStorage
     {
         var list = new List<GiftInfo>();
         string pathToRead = FilePath;
+        bool needsUpgrade = false;
 
         // Check if primary path exists, otherwise use fallback
         if (!File.Exists(FilePath))
@@ -525,6 +526,12 @@ class FileStorage
 
                     var parts = SplitEscaped(line);
                     if (parts.Length < 2) continue;
+
+                    // Check if this is old format (less than 9 fields)
+                    if (parts.Length < 9)
+                    {
+                        needsUpgrade = true;
+                    }
 
                     string product = Unescape(parts[0]);
                     string pricePart = parts.Length >= 2 ? parts[1] : "0";
@@ -555,6 +562,20 @@ class FileStorage
         catch (Exception)
         {
             // Silent fail - return empty list
+        }
+
+        // Auto-upgrade old format to new format
+        if (needsUpgrade && list.Count > 0)
+        {
+            try
+            {
+                await SaveAllAsync(list);
+                Console.WriteLine($"✓ Upgraded file format: {Path.GetFileName(FilePath)}");
+            }
+            catch
+            {
+                // Ignore upgrade errors
+            }
         }
 
         return list;

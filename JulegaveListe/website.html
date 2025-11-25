@@ -253,10 +253,17 @@
                                                 return getString(obj, 'productInfo', 'ProductInfo');
                                             };
 
+                                            // Debug: Log the data to see what we're getting
+                                            console.log('Gifts data:', data);
+                                            data.forEach((gift, index) => {
+                                                console.log(`Gift ${index}: isFavorite=${gift.isFavorite}, IsFavorite=${gift.IsFavorite}`);
+                                            });
+
                                             // Sort: favorites first
                                             const sortedData = [...data].sort((a, b) => {
                                                 const aFav = getIsFavorite(a);
                                                 const bFav = getIsFavorite(b);
+                                                console.log(`Comparing: ${getString(a, 'produkt', 'Produkt')} (fav=${aFav}) vs ${getString(b, 'produkt', 'Produkt')} (fav=${bFav})`);
                                                 if (aFav && !bFav) return -1;
                                                 if (!aFav && bFav) return 1;
                                                 return 0;
