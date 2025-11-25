@@ -256,6 +256,7 @@
         <div id="mainMenu" class="main-menu">
             <button class="btn btn-add" onclick="showAddForm()">➕ Tilføj gave</button>
             <button class="btn btn-remove" onclick="showRemoveForm()">🗑️ Fjern gave</button>
+            <button class="btn btn-add" onclick="showEditForm()">✏️ Rediger gave</button>
         </div>
 
         <!-- Add Gift Form -->
@@ -281,6 +282,11 @@
                     <div class="form-group">
                         <label for="productPrice">Pris (kr):</label>
                         <input type="number" id="productPrice" step="0.01">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="productInfo">Produkt information (f.eks. størrelse, farve):</label>
+                        <input type="text" id="productInfo" placeholder="Valgfrit: Indtast størrelse, farve, etc.">
                     </div>
 
                     <div class="form-group">
@@ -322,6 +328,53 @@
             <button class="btn btn-secondary" onclick="backToMenu()">↩️ Tilbage</button>
         </div>
 
+        <!-- Edit Gift Form -->
+        <div id="editForm" class="hidden">
+            <h2 style="color: #667eea; margin-bottom: 20px;">Rediger gave</h2>
+            
+            <div class="form-group">
+                <label for="editPersonSelect">Vælg person:</label>
+                <select id="editPersonSelect" onchange="loadGiftsForEdit()">
+                    <option value="">-- Vælg person --</option>
+                    <option value="jannic">Jannic</option>
+                    <option value="katrine">Katrine</option>
+                    <option value="rud">Rud</option>
+                    <option value="hjalte">Hjalte</option>
+                </select>
+            </div>
+
+            <div id="editGiftsList"></div>
+
+            <div id="editGiftDetails" class="hidden">
+                <h3>Rediger gave detaljer</h3>
+                
+                <div class="form-group">
+                    <label for="editProductName">Produkt navn:</label>
+                    <input type="text" id="editProductName">
+                </div>
+
+                <div class="form-group">
+                    <label for="editProductPrice">Pris (kr):</label>
+                    <input type="number" id="editProductPrice" step="0.01">
+                </div>
+
+                <div class="form-group">
+                    <label for="editProductUrl">URL:</label>
+                    <input type="text" id="editProductUrl">
+                </div>
+
+                <div class="form-group">
+                    <label for="editProductInfo">Produkt information:</label>
+                    <input type="text" id="editProductInfo" placeholder="Størrelse, farve, etc.">
+                </div>
+
+                <button class="btn btn-primary" onclick="saveEditedGift()">💾 Gem ændringer</button>
+                <button class="btn btn-secondary" onclick="cancelEdit()">❌ Annuller</button>
+            </div>
+
+            <button class="btn btn-secondary" onclick="backToMenu()">↩️ Tilbage</button>
+        </div>
+
         <!-- Loading Indicator -->
         <div id="loading" class="hidden">
             <div class="spinner"></div>
@@ -340,6 +393,7 @@
             document.getElementById('mainMenu').classList.add('hidden');
             document.getElementById('addForm').classList.remove('hidden');
             document.getElementById('removeForm').classList.add('hidden');
+            document.getElementById('editForm').classList.add('hidden');
             document.getElementById('productPreview').classList.add('hidden');
             document.getElementById('addUrl').value = '';
         }
@@ -348,15 +402,27 @@
             document.getElementById('mainMenu').classList.add('hidden');
             document.getElementById('addForm').classList.add('hidden');
             document.getElementById('removeForm').classList.remove('hidden');
+            document.getElementById('editForm').classList.add('hidden');
             document.getElementById('removePersonSelect').value = '';
             document.getElementById('giftsList').innerHTML = '';
             document.getElementById('removeBtn').classList.add('hidden');
+        }
+
+        function showEditForm() {
+            document.getElementById('mainMenu').classList.add('hidden');
+            document.getElementById('addForm').classList.add('hidden');
+            document.getElementById('removeForm').classList.add('hidden');
+            document.getElementById('editForm').classList.remove('hidden');
+            document.getElementById('editPersonSelect').value = '';
+            document.getElementById('editGiftsList').innerHTML = '';
+            document.getElementById('editGiftDetails').classList.add('hidden');
         }
 
         function backToMenu() {
             document.getElementById('mainMenu').classList.remove('hidden');
             document.getElementById('addForm').classList.add('hidden');
             document.getElementById('removeForm').classList.add('hidden');
+            document.getElementById('editForm').classList.add('hidden');
             clearMessage();
         }
 
@@ -430,6 +496,7 @@
             const productName = document.getElementById('productName').value.trim();
             const price = parseFloat(document.getElementById('productPrice').value);
             const person = document.getElementById('personSelect').value;
+            const productInfo = document.getElementById('productInfo').value.trim();
 
             if (!url || !productName || !person) {
                 showMessage('Udfyld venligst alle felter', 'error');
@@ -445,18 +512,23 @@
             showLoading(true);
 
             try {
+                const requestBody = {
+                    person: person,
+                    productName: productName,
+                    price: price,
+                    url: url,
+                    isManualPrice: isManualPrice || price !== parseFloat(document.getElementById('productPrice').value),
+                    productInfo: productInfo
+                };
+                
+                console.log('[ADD-GIFT] Sending request:', requestBody);
+                
                 const response = await fetch(`/api/add-gift`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({
-                        person: person,
-                        productName: productName,
-                        price: price,
-                        url: url,
-                        isManualPrice: isManualPrice || price !== parseFloat(document.getElementById('productPrice').value)
-                    })
+                    body: JSON.stringify(requestBody)
                 });
 
                 if (!response.ok) {
@@ -470,6 +542,7 @@
                 document.getElementById('addUrl').value = '';
                 document.getElementById('productName').value = '';
                 document.getElementById('productPrice').value = '';
+                document.getElementById('productInfo').value = '';
                 document.getElementById('personSelect').value = '';
                 document.getElementById('productPreview').classList.add('hidden');
                 
@@ -585,6 +658,142 @@
             } finally {
                 showLoading(false);
             }
+        }
+
+        let currentEditGift = null;
+        let currentEditPerson = '';
+
+        async function loadGiftsForEdit() {
+            const person = document.getElementById('editPersonSelect').value;
+            
+            if (!person) {
+                document.getElementById('editGiftsList').innerHTML = '';
+                document.getElementById('editGiftDetails').classList.add('hidden');
+                return;
+            }
+
+            currentEditPerson = person;
+            showLoading(true);
+
+            try {
+                const response = await fetch(`/gifts/${person}`);
+                if (!response.ok) {
+                    throw new Error('Kunne ikke hente gaver');
+                }
+
+                const gifts = await response.json();
+                
+                if (gifts.length === 0) {
+                    document.getElementById('editGiftsList').innerHTML = '<p style="color: #999; text-align: center; padding: 20px;">Ingen gaver fundet</p>';
+                    document.getElementById('editGiftDetails').classList.add('hidden');
+                    return;
+                }
+
+                let html = '<div style="margin-bottom: 20px;">';
+                gifts.forEach((gift, index) => {
+                    const giftUrl = gift.url || '';
+                    html += `
+                        <div style="padding: 15px; margin-bottom: 10px; background: #f8f9fa; border-radius: 10px; cursor: pointer; transition: all 0.3s;" 
+                             onclick="selectGiftForEdit(${index}, '${escapeHtml(gift.produkt)}', ${gift.price}, '${escapeHtml(giftUrl)}', '${escapeHtml(gift.productInfo || '')}', ${gift.isManualPrice})"
+                             onmouseover="this.style.background='#e9ecef'" 
+                             onmouseout="this.style.background='#f8f9fa'">
+                            <div style="font-weight: bold; color: #667eea;">${gift.produkt}</div>
+                            <div style="color: #666; font-size: 0.9em; margin-top: 5px;">${gift.price} kr${gift.productInfo ? ' • ' + gift.productInfo : ''}</div>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+                
+                document.getElementById('editGiftsList').innerHTML = html;
+
+            } catch (error) {
+                showMessage(`Fejl: ${error.message}`, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML.replace(/'/g, '&apos;');
+        }
+
+        function selectGiftForEdit(index, name, price, url, productInfo, isManualPrice) {
+            currentEditGift = { index, name, price, url, productInfo, isManualPrice };
+            
+            document.getElementById('editProductName').value = name;
+            document.getElementById('editProductPrice').value = price;
+            document.getElementById('editProductUrl').value = url;
+            document.getElementById('editProductInfo').value = productInfo || '';
+            
+            document.getElementById('editGiftDetails').classList.remove('hidden');
+        }
+
+        async function saveEditedGift() {
+            const productName = document.getElementById('editProductName').value.trim();
+            const price = parseFloat(document.getElementById('editProductPrice').value);
+            const url = document.getElementById('editProductUrl').value.trim();
+            const productInfo = document.getElementById('editProductInfo').value.trim();
+            
+            console.log('[EDIT-GIFT] Editing gift');
+
+            if (!productName || !url) {
+                showMessage('Udfyld venligst alle felter', 'error');
+                return;
+            }
+
+            if (isNaN(price) || price < 0) {
+                showMessage('Indtast venligst en gyldig pris', 'error');
+                return;
+            }
+
+            clearMessage();
+            showLoading(true);
+
+            try {
+                const requestBody = {
+                    person: currentEditPerson,
+                    originalUrl: currentEditGift.url,
+                    productName: productName,
+                    price: price,
+                    url: url,
+                    isManualPrice: currentEditGift.isManualPrice,
+                    productInfo: productInfo
+                };
+                
+                console.log('[EDIT-GIFT] Sending request:', requestBody);
+                
+                const response = await fetch(`/api/edit-gift`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+
+                showMessage('✓ Gave opdateret!', 'success');
+                
+                setTimeout(() => {
+                    document.getElementById('editGiftDetails').classList.add('hidden');
+                    loadGiftsForEdit();
+                }, 1500);
+
+            } catch (error) {
+                showMessage(`Fejl: ${error.message}`, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function cancelEdit() {
+            document.getElementById('editGiftDetails').classList.add('hidden');
+            currentEditGift = null;
         }
     </script>
 </body>
