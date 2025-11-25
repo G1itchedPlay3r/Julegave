@@ -184,10 +184,13 @@ class BrowserAutomation
     public static async Task<(string productName, float price, bool isManualPrice)> GetProductInfoWithBrowser(string url)
     {
         // Retry logic in case of session errors
-        for (int attempt = 0; attempt < 2; attempt++)
+        Exception? lastException = null;
+        
+        for (int attempt = 0; attempt < 3; attempt++)
         {
             try
             {
+                Console.WriteLine($"Attempt {attempt + 1}/3: Getting product info from {url}");
                 var driver = GetDriver();
                 
                 Console.WriteLine($"Loading page with browser...");
@@ -376,18 +379,30 @@ class BrowserAutomation
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Browser error (attempt {attempt + 1}): {ex.Message}");
-                if (attempt == 1)
+                Console.WriteLine($"❌ Browser error (attempt {attempt + 1}/3): {ex.Message}");
+                lastException = ex;
+                
+                // Force driver recreation on error
+                lock (_lock)
                 {
-                    throw;
+                    if (_driver != null)
+                    {
+                        try { _driver.Quit(); } catch { }
+                        try { _driver.Dispose(); } catch { }
+                        _driver = null;
+                    }
                 }
-                // On first attempt failure, retry with fresh driver
-                await Task.Delay(1000);
+                
+                if (attempt < 2)
+                {
+                    // Wait before retry
+                    await Task.Delay(2000);
+                }
             }
         }
         
-        // Should never reach here due to throw above
-        throw new Exception("Failed to get product info after retries");
+        // All attempts failed
+        throw new Exception($"Failed to get product info after 3 attempts. Last error: {lastException?.Message ?? "Unknown"}");
     }
 }
 class ProductInformation 
