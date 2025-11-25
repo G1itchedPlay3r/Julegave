@@ -245,7 +245,9 @@
                                             };
 
                                             const getIsFavorite = (obj) => {
-                                                const val = obj.isFavorite ?? obj.IsFavorite ?? false;
+                                                const val = obj.isFavorite ?? obj.IsFavorite;
+                                                // Handle undefined, null, or missing values as false
+                                                if (val === undefined || val === null) return false;
                                                 return val === true || val === 'true' || val === 'True';
                                             };
 

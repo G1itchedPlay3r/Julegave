@@ -896,6 +896,12 @@ class Website
         builder.Services.AddHostedService<PriceUpdateService>();
         
         // Configure JSON serialization to use camelCase for JavaScript compatibility
+        var jsonOptions = new System.Text.Json.JsonSerializerOptions
+        {
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+            WriteIndented = false
+        };
+        
         builder.Services.ConfigureHttpJsonOptions(options =>
         {
             options.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
@@ -922,7 +928,7 @@ class Website
                     ProductName = productName, 
                     Price = price, 
                     IsManualPrice = isManualPrice 
-                });
+                }, jsonOptions);
             }
             catch (Exception ex)
             {
@@ -1122,7 +1128,7 @@ class Website
             string chosen = candidates.FirstOrDefault(File.Exists) ?? appDataPath;
             var storage = new FileStorage(chosen);
             var list = await storage.LoadAsync();
-            return Results.Json(list);
+            return Results.Json(list, jsonOptions);
         });
 
     app.MapGet("/gifts", async () =>
@@ -1148,7 +1154,7 @@ class Website
                 var s = new FileStorage(candidate);
                 all.AddRange(await s.LoadAsync());
             }
-            return Results.Json(all);
+            return Results.Json(all, jsonOptions);
         });
 
         // Serve the website.html file at the root on port 5000
