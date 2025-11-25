@@ -705,7 +705,7 @@
                 let html = '<div style="margin-bottom: 20px;">';
                 gifts.forEach((gift, index) => {
                     const favIcon = gift.isFavorite ? '⭐ ' : '';
-                    const giftUrl = gift.urL || gift.url || '';
+                    const giftUrl = gift.url || '';
                     html += `
                         <div style="padding: 15px; margin-bottom: 10px; background: #f8f9fa; border-radius: 10px; cursor: pointer; transition: all 0.3s;" 
                              onclick="selectGiftForEdit(${index}, '${escapeHtml(gift.produkt)}', ${gift.price}, '${escapeHtml(giftUrl)}', '${escapeHtml(gift.productInfo || '')}', ${gift.isManualPrice}, ${gift.isFavorite})"

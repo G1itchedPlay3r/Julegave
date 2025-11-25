@@ -801,7 +801,10 @@ public class GiftInfo
     }
     public string Produkt { get; set; }
     public float Price { get; set; }
+    
+    [JsonPropertyName("url")]
     public string URl { get; set; }
+    
     public string PriceRunnerProductId { get; set; }
     public DateTime LastPriceUpdate { get; set; }
     public string ShopName { get; set; }
