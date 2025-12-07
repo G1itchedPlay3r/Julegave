@@ -1,6 +1,4 @@
 ﻿using System.Globalization;
-using System.Net;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -8,440 +6,317 @@ using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
-using OpenQA.Selenium;
-using OpenQA.Selenium.Chrome;
-using OpenQA.Selenium.Support.UI;
 using Microsoft.Data.Sqlite;
+using PuppeteerSharp;
 
-// Windows API for hiding console window
-static class NativeMethods
-{
-    [DllImport("kernel32.dll")]
-    public static extern IntPtr GetConsoleWindow();
-
-    [DllImport("user32.dll")]
-    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-}
-
-// Browser automation service for sites that block scraping or use JavaScript
+// Browser automation service using PuppeteerSharp
 class BrowserAutomation
 {
-    private static ChromeDriver? _driver;
-    private static readonly object _lock = new object();
+    private static IBrowser? _browser;
+    private static readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
+    private static bool _browserInitialized = false;
 
-    public static ChromeDriver GetDriver()
+    public static async Task<IBrowser> GetBrowserAsync()
     {
-        lock (_lock)
+        await _semaphore.WaitAsync();
+        try
         {
-            // Check if driver is valid, if not recreate it
-            if (_driver != null)
+            if (_browser == null || !_browser.IsConnected)
             {
-                try
+                if (!_browserInitialized)
                 {
-                    // Test if session is still valid by checking multiple properties
-                    var _ = _driver.WindowHandles;
-                    var __ = _driver.CurrentWindowHandle;
-                    // If we can access these, session is valid
+                    Console.WriteLine("Downloading Chromium browser (first run only)...");
+                    var browserFetcher = new BrowserFetcher();
+                    await browserFetcher.DownloadAsync();
+                    _browserInitialized = true;
                 }
-                catch (Exception ex)
+
+                Console.WriteLine("Launching browser...");
+                _browser = await Puppeteer.LaunchAsync(new LaunchOptions
                 {
-                    // Session invalid (browser closed, session expired, etc.)
-                    Console.WriteLine($"⚠️  WebDriver session invalid ({ex.GetType().Name}), recreating...");
-                    try { _driver.Quit(); } catch { }
-                    try { _driver.Dispose(); } catch { }
-                    _driver = null;
-                }
+                    Headless = true,
+                    Args = new[]
+                    {
+                        "--no-sandbox",
+                        "--disable-setuid-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-gpu",
+                        "--disable-software-rasterizer",
+                        "--disable-extensions",
+                        "--disable-images",
+                        "--blink-settings=imagesEnabled=false",
+                        "--disable-webgl",
+                        "--lang=da-DK"
+                    }
+                });
             }
-            
-            if (_driver == null)
-            {
-                try
-                {
-                    var options = new ChromeOptions();
-                    
-                    // Try to find Chrome/Chromium binary on Linux
-                    if (OperatingSystem.IsLinux())
-                    {
-                        string[] possiblePaths = {
-                            "/usr/bin/chromium-browser",
-                            "/usr/bin/chromium",
-                            "/usr/bin/google-chrome",
-                            "/usr/bin/google-chrome-stable",
-                            "/snap/bin/chromium",
-                            "/usr/bin/chrome"
-                        };
-                        
-                        string? chromePath = possiblePaths.FirstOrDefault(File.Exists);
-                        if (chromePath != null)
-                        {
-                            Console.WriteLine($"Found Chrome at: {chromePath}");
-                            options.BinaryLocation = chromePath;
-                        }
-                        else
-                        {
-                            Console.WriteLine("Chrome binary not found in standard locations. Checking PATH...");
-                            // Try to find it via 'which' command
-                            try
-                            {
-                                var psi = new System.Diagnostics.ProcessStartInfo
-                                {
-                                    FileName = "/bin/sh",
-                                    Arguments = "-c \"which chromium-browser || which chromium || which google-chrome\"",
-                                    RedirectStandardOutput = true,
-                                    UseShellExecute = false
-                                };
-                                using var proc = System.Diagnostics.Process.Start(psi);
-                                if (proc != null)
-                                {
-                                    string output = proc.StandardOutput.ReadToEnd().Trim();
-                                    proc.WaitForExit();
-                                    if (!string.IsNullOrEmpty(output) && File.Exists(output))
-                                    {
-                                        Console.WriteLine($"Found Chrome via which: {output}");
-                                        options.BinaryLocation = output;
-                                    }
-                                }
-                            }
-                            catch { }
-                        }
-                    }
-                    
-                    options.AddArgument("--headless=new");
-                    options.AddArgument("--disable-gpu");
-                    options.AddArgument("--no-sandbox");
-                    options.AddArgument("--disable-dev-shm-usage");
-                    options.AddArgument("--disable-blink-features=AutomationControlled");
-                    options.AddArgument("--log-level=3");
-                    options.AddArgument("--disable-images");
-                    options.AddArgument("--disable-extensions");
-                    options.AddArgument("--disable-plugins");
-                    options.AddArgument("--blink-settings=imagesEnabled=false");
-                    options.AddArgument("--disable-software-rasterizer");
-                    options.AddArgument("--disable-webgl");
-                    options.AddArgument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
-                    options.AddArgument("--lang=da-DK");
-                    options.AddExcludedArgument("enable-automation");
-                    options.AddAdditionalOption("useAutomationExtension", false);
-                    
-                    // Set preferences to disable images and speed up loading
-                    options.AddUserProfilePreference("profile.default_content_setting_values.images", 2);
-                    options.AddUserProfilePreference("profile.managed_default_content_settings.images", 2);
-                    
-                    // Create ChromeDriverService with explicit paths for Linux
-                    ChromeDriverService? service = null;
-                    if (OperatingSystem.IsLinux())
-                    {
-                        string[] driverPaths = {
-                            "/usr/bin/chromedriver",
-                            "/usr/lib/chromium-browser/chromedriver",
-                            "/snap/bin/chromium.chromedriver"
-                        };
-                        
-                        string? driverPath = driverPaths.FirstOrDefault(File.Exists);
-                        if (driverPath != null)
-                        {
-                            Console.WriteLine($"Found ChromeDriver at: {driverPath}");
-                            var driverDir = Path.GetDirectoryName(driverPath) ?? "/usr/bin";
-                            service = ChromeDriverService.CreateDefaultService(driverDir, Path.GetFileName(driverPath));
-                            service.SuppressInitialDiagnosticInformation = true;
-                        }
-                    }
-                    
-                    if (service != null)
-                    {
-                        _driver = new ChromeDriver(service, options);
-                    }
-                    else
-                    {
-                        _driver = new ChromeDriver(options);
-                    }
-                    
-                    _driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(3);
-                    _driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(15);
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"\n❌ Failed to start Chrome browser:");
-                    Console.Error.WriteLine($"   {ex.Message}");
-                    Console.Error.WriteLine("\nChrome/Chromium is installed but ChromeDriver may be missing.");
-                    Console.Error.WriteLine("\nTo install ChromeDriver on Linux:");
-                    Console.Error.WriteLine("  Ubuntu/Debian: sudo apt-get install chromium-chromedriver");
-                    Console.Error.WriteLine("  Or download from: https://chromedriver.chromium.org/downloads");
-                    Console.Error.WriteLine("\nAlternatively, you can enter prices manually when adding items.\n");
-                    throw;
-                }
-            }
-            return _driver;
+            return _browser;
+        }
+        finally
+        {
+            _semaphore.Release();
         }
     }
 
-    public static void Quit()
+    public static async Task CloseBrowserAsync()
     {
-        lock (_lock)
+        await _semaphore.WaitAsync();
+        try
         {
-            _driver?.Quit();
-            _driver?.Dispose();
-            _driver = null;
+            if (_browser != null)
+            {
+                await _browser.CloseAsync();
+                _browser.Dispose();
+                _browser = null;
+            }
+        }
+        finally
+        {
+            _semaphore.Release();
         }
     }
 
     public static async Task<(string productName, float price, bool isManualPrice)> GetProductInfoWithBrowser(string url)
     {
-        // Retry logic in case of session errors
         Exception? lastException = null;
-        
+
         for (int attempt = 0; attempt < 3; attempt++)
         {
+            IPage? page = null;
             try
             {
                 Console.WriteLine($"Attempt {attempt + 1}/3: Getting product info from {url}");
-                var driver = GetDriver();
+                
+                var browser = await GetBrowserAsync();
+                page = await browser.NewPageAsync();
+                
+                // Set user agent and viewport
+                await page.SetUserAgentAsync("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
+                await page.SetViewportAsync(new ViewPortOptions { Width = 1920, Height = 1080 });
                 
                 Console.WriteLine($"Loading page with browser...");
-                driver.Navigate().GoToUrl(url);
+                await page.GoToAsync(url, new NavigationOptions { WaitUntil = new[] { WaitUntilNavigation.DOMContentLoaded }, Timeout = 30000 });
                 
-                // Wait for page to fully load (including JavaScript)
-                await Task.Delay(3000);
+                // Wait for page to render
+                await Task.Delay(2000);
 
-            // Try to find product name - prioritize common e-commerce patterns
-            string productName = "Ukendt produkt";
-            
-            // First, try to get from page title (often most reliable)
-            try
-            {
-                string pageTitle = driver.Title;
+                // Try to find product name
+                string productName = "Ukendt produkt";
+                
+                // First, try page title
+                var pageTitle = await page.GetTitleAsync();
                 if (!string.IsNullOrWhiteSpace(pageTitle) && !pageTitle.Equals("Forside", StringComparison.OrdinalIgnoreCase))
                 {
-                    // Remove common suffixes like " - Proshop", " | Shop name", etc.
                     var titleParts = pageTitle.Split(new[] { " - ", " | ", " | " }, StringSplitOptions.None);
                     if (titleParts.Length > 0 && titleParts[0].Trim().Length > 5)
                     {
                         productName = titleParts[0].Trim();
                         Console.WriteLine($"✓ Found name from title: {productName}");
-                        goto PriceSearch; // Skip other name searches if we found it
+                        goto PriceSearch;
                     }
                 }
-            }
-            catch { }
-            
-            string[] nameSelectors = {
-                "h1[product-display-name]",  // Proshop specific
-                "[product-display-name]",  // Proshop attribute
-                "h1[itemprop='name']",  // Schema.org
-                "h1.product-name",
-                "h1.product-title",
-                ".product-name h1",
-                ".product-title h1",
-                "h1.ProductPage_title",  // Some sites use this
-                ".ProductPage h1",  // Product page heading
-                "main h1",  // Main content h1
-                "article h1",  // Article heading
-                "[data-product-name]",  // Data attribute
-            };
 
-            foreach (var selector in nameSelectors)
-            {
-                try
+                // Try various selectors for product name
+                string[] nameSelectors = {
+                    "h1[product-display-name]",
+                    "[product-display-name]",
+                    "h1[itemprop='name']",
+                    "h1.product-name",
+                    "h1.product-title",
+                    ".product-name h1",
+                    ".product-title h1",
+                    "h1.ProductPage_title",
+                    ".ProductPage h1",
+                    "main h1",
+                    "article h1",
+                    "[data-product-name]"
+                };
+
+                foreach (var selector in nameSelectors)
                 {
-                    var elements = driver.FindElements(By.CssSelector(selector));
-                    foreach (var element in elements)
+                    try
                     {
-                        // Try attribute first (Proshop uses this)
-                        string? attrName = element.GetAttribute("product-display-name") ?? element.GetAttribute("data-product-name");
-                        if (!string.IsNullOrWhiteSpace(attrName) && !attrName.Equals("Forside", StringComparison.OrdinalIgnoreCase))
+                        var element = await page.QuerySelectorAsync(selector);
+                        if (element != null)
                         {
-                            productName = attrName;
-                            Console.WriteLine($"✓ Found name from attribute: {productName}");
-                            goto PriceSearch;
-                        }
-                        
-                        // Try text content
-                        string? text = element.Text?.Trim();
-                        if (!string.IsNullOrWhiteSpace(text) && 
-                            !text.Equals("Forside", StringComparison.OrdinalIgnoreCase) && 
-                            text.Length > 5)
-                        {
-                            productName = text;
-                            Console.WriteLine($"✓ Found name from element: {productName}");
-                            goto PriceSearch;
+                            // Try attribute first
+                            var attrName = await element.GetPropertyAsync("product-display-name");
+                            if (attrName == null)
+                                attrName = await element.GetPropertyAsync("data-product-name");
+                            
+                            if (attrName != null)
+                            {
+                                var nameValue = await attrName.JsonValueAsync<string>();
+                                if (!string.IsNullOrWhiteSpace(nameValue) && !nameValue.Equals("Forside", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    productName = nameValue;
+                                    Console.WriteLine($"✓ Found name from attribute: {productName}");
+                                    goto PriceSearch;
+                                }
+                            }
+
+                            // Try text content
+                            var textProp = await element.GetPropertyAsync("textContent");
+                            if (textProp != null)
+                            {
+                                var text = (await textProp.JsonValueAsync<string>())?.Trim();
+                                if (!string.IsNullOrWhiteSpace(text) && 
+                                    !text.Equals("Forside", StringComparison.OrdinalIgnoreCase) && 
+                                    text.Length > 5)
+                                {
+                                    productName = text;
+                                    Console.WriteLine($"✓ Found name from element: {productName}");
+                                    goto PriceSearch;
+                                }
+                            }
                         }
                     }
+                    catch { continue; }
                 }
-                catch { continue; }
-            }
-            
-            if (productName == "Ukendt produkt")
-            {
-                Console.WriteLine("⚠️  Could not find product name on page");
-            }
 
-            PriceSearch:
-
-            // Try to find price - prioritize visible price elements
-            float price = 0f;
-            string[] priceSelectors = {
-                ".site-currency-attention",  // Proshop (both campaign and regular)
-                "[itemprop='price']",  // Schema.org
-                ".price-now",
-                ".current-price", 
-                ".sale-price",
-                ".product-price span",
-                ".product-price",
-                ".price span",
-                ".price",
-                "[data-price]",  // Data attribute
-            };
-
-            foreach (var selector in priceSelectors)
-            {
-                try
+                if (productName == "Ukendt produkt")
                 {
-                    var element = driver.FindElement(By.CssSelector(selector));
-                    
-                    // Try content/data attributes first
-                    string? attrPrice = element.GetAttribute("content") ?? element.GetAttribute("data-price");
-                    if (!string.IsNullOrWhiteSpace(attrPrice) && float.TryParse(attrPrice, NumberStyles.Any, CultureInfo.InvariantCulture, out float attrPriceValue))
+                    Console.WriteLine("⚠️  Could not find product name on page");
+                }
+
+                PriceSearch:
+
+                // Try to find price
+                float price = 0f;
+                string[] priceSelectors = {
+                    ".site-currency-attention",
+                    "[itemprop='price']",
+                    ".price-now",
+                    ".current-price",
+                    ".sale-price",
+                    ".product-price span",
+                    ".product-price",
+                    ".price span",
+                    ".price",
+                    "[data-price]"
+                };
+
+                foreach (var selector in priceSelectors)
+                {
+                    try
                     {
-                        price = attrPriceValue;
-                        Console.WriteLine($"✓ Found price: {price} kr");
-                        break;
-                    }
-                    
-                    // Try visible text
-                    string? text = element.Text?.Trim();
-                    if (!string.IsNullOrWhiteSpace(text))
-                    {
-                        // Extract numbers from text (handles formats like "1.299,00 kr" or "1299 kr" or "299.95 kr")
-                        var match = Regex.Match(text, @"(\d{1,3}(?:[.,\s]\d{3})*(?:[.,]\d{2})?)");
-                        if (match.Success)
+                        var element = await page.QuerySelectorAsync(selector);
+                        if (element != null)
                         {
-                            string priceText = match.Groups[1].Value;
-                            
-                            // Handle different formats:
-                            // Danish: "7.777,00" (dot = thousands, comma = decimal)
-                            // English: "7,777.00" (comma = thousands, dot = decimal)
-                            // We want to ignore decimals and keep whole number only
-                            
-                            // If there's a comma, check if it's followed by 2 digits (decimal separator)
-                            if (priceText.Contains(","))
+                            // Try content/data attributes first
+                            var contentProp = await element.GetPropertyAsync("content");
+                            if (contentProp == null)
+                                contentProp = await element.GetPropertyAsync("data-price");
+
+                            if (contentProp != null)
                             {
-                                var parts = priceText.Split(',');
-                                if (parts.Length > 1 && parts[1].Length <= 2)
+                                var attrPrice = await contentProp.JsonValueAsync<string>();
+                                if (!string.IsNullOrWhiteSpace(attrPrice) && 
+                                    float.TryParse(attrPrice, NumberStyles.Any, CultureInfo.InvariantCulture, out float attrPriceValue))
                                 {
-                                    // Danish format: comma is decimal separator, ignore it
-                                    priceText = parts[0];
-                                }
-                                else
-                                {
-                                    // Comma is thousands separator, keep all
-                                    priceText = priceText.Replace(",", "");
+                                    price = attrPriceValue;
+                                    Console.WriteLine($"✓ Found price: {price} kr");
+                                    goto FoundPrice;
                                 }
                             }
-                            
-                            // If there's a dot, check if it's followed by 2 digits (decimal separator)
-                            if (priceText.Contains("."))
+
+                            // Try visible text
+                            var textProp = await element.GetPropertyAsync("textContent");
+                            if (textProp != null)
                             {
-                                var parts = priceText.Split('.');
-                                if (parts.Length > 1 && parts[1].Length <= 2)
+                                var text = (await textProp.JsonValueAsync<string>())?.Trim();
+                                if (!string.IsNullOrWhiteSpace(text))
                                 {
-                                    // Dot is decimal separator (English format), ignore decimals
-                                    priceText = parts[0];
+                                    var match = Regex.Match(text, @"(\d{1,3}(?:[.,\s]\d{3})*(?:[.,]\d{2})?)");
+                                    if (match.Success)
+                                    {
+                                        string priceText = match.Groups[1].Value;
+
+                                        // Handle Danish format: "7.777,00"
+                                        if (priceText.Contains(","))
+                                        {
+                                            var parts = priceText.Split(',');
+                                            if (parts.Length > 1 && parts[1].Length <= 2)
+                                            {
+                                                priceText = parts[0];
+                                            }
+                                            else
+                                            {
+                                                priceText = priceText.Replace(",", "");
+                                            }
+                                        }
+
+                                        // Handle format with dots
+                                        if (priceText.Contains("."))
+                                        {
+                                            var parts = priceText.Split('.');
+                                            if (parts.Length > 1 && parts[1].Length <= 2)
+                                            {
+                                                priceText = parts[0];
+                                            }
+                                            else
+                                            {
+                                                priceText = priceText.Replace(".", "");
+                                            }
+                                        }
+
+                                        priceText = priceText.Replace(" ", "").Trim();
+
+                                        if (float.TryParse(priceText, NumberStyles.Any, CultureInfo.InvariantCulture, out float parsedPrice))
+                                        {
+                                            price = parsedPrice;
+                                            Console.WriteLine($"✓ Found price: {price} kr");
+                                            goto FoundPrice;
+                                        }
+                                    }
                                 }
-                                else
-                                {
-                                    // Dot is thousands separator (Danish format), remove it
-                                    priceText = priceText.Replace(".", "");
-                                }
-                            }
-                            
-                            priceText = priceText.Replace(" ", "").Trim();
-                            
-                            if (float.TryParse(priceText, NumberStyles.Any, CultureInfo.InvariantCulture, out float parsedPrice))
-                            {
-                                price = parsedPrice;
-                                Console.WriteLine($"✓ Found price: {price} kr");
-                                break;
                             }
                         }
                     }
+                    catch { continue; }
                 }
-                catch { continue; }
-            }
 
-            bool isManualPrice = false;
-            if (price == 0f)
-            {
-                Console.WriteLine("⚠️  Could not find price on page");
-                isManualPrice = true;
-            }
-            if (productName == "Ukendt produkt")
-            {
-                Console.WriteLine("⚠️  Could not find product name on page");
-            }
+                FoundPrice:
 
-            return (productName, price, isManualPrice);
+                bool isManualPrice = false;
+                if (price == 0f)
+                {
+                    Console.WriteLine("⚠️  Could not find price on page");
+                    isManualPrice = true;
+                }
+                if (productName == "Ukendt produkt")
+                {
+                    Console.WriteLine("⚠️  Could not find product name on page");
+                }
+
+                await page.CloseAsync();
+                return (productName, price, isManualPrice);
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"❌ Browser error (attempt {attempt + 1}/3): {ex.Message}");
                 lastException = ex;
-                
-                // Force driver recreation on error
-                lock (_lock)
+
+                if (page != null)
                 {
-                    if (_driver != null)
-                    {
-                        try { _driver.Quit(); } catch { }
-                        try { _driver.Dispose(); } catch { }
-                        _driver = null;
-                    }
+                    try { await page.CloseAsync(); } catch { }
                 }
-                
+
                 if (attempt < 2)
                 {
-                    // Wait before retry
                     await Task.Delay(2000);
                 }
             }
         }
-        
-        // All attempts failed
+
         throw new Exception($"Failed to get product info after 3 attempts. Last error: {lastException?.Message ?? "Unknown"}");
     }
 }
+
 class ProductInformation 
 {
-    private static readonly HttpClient client = CreateClient();
-
-    private static HttpClient CreateClient()
-    {
-        var handler = new HttpClientHandler
-        {
-            AllowAutoRedirect = true,
-            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
-        };
-        var c = new HttpClient(handler);
-        c.Timeout = TimeSpan.FromSeconds(30);
-        c.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
-        c.DefaultRequestHeaders.Accept.ParseAdd("text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7");
-        c.DefaultRequestHeaders.AcceptLanguage.ParseAdd("da-DK,da;q=0.9,en-US;q=0.8,en;q=0.7");
-        c.DefaultRequestHeaders.AcceptEncoding.ParseAdd("gzip, deflate, br");
-        c.DefaultRequestHeaders.Add("DNT", "1");
-        c.DefaultRequestHeaders.Add("sec-ch-ua", "\"Google Chrome\";v=\"131\", \"Chromium\";v=\"131\", \"Not_A Brand\";v=\"24\"");
-        c.DefaultRequestHeaders.Add("sec-ch-ua-mobile", "?0");
-        c.DefaultRequestHeaders.Add("sec-ch-ua-platform", "\"Windows\"");
-        c.DefaultRequestHeaders.Add("sec-fetch-dest", "document");
-        c.DefaultRequestHeaders.Add("sec-fetch-mode", "navigate");
-        c.DefaultRequestHeaders.Add("sec-fetch-site", "none");
-        c.DefaultRequestHeaders.Add("sec-fetch-user", "?1");
-        c.DefaultRequestHeaders.Add("upgrade-insecure-requests", "1");
-        c.DefaultRequestHeaders.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue { NoCache = true };
-        return c;
-    }
-
     public static async Task<(string productName, float price, bool isManualPrice)> GetProductInfoAsync(string url)
     {
-        // Use browser automation for ALL websites - most reliable method
         Console.WriteLine($"Fetching product from: {url}");
         return await BrowserAutomation.GetProductInfoWithBrowser(url);
     }
@@ -681,265 +556,6 @@ class DatabaseStorage
     }
 }
 
-// Keep FileStorage for migration purposes
-class FileStorage
-{
-    private readonly string _originalFilePath;
-    private string _effectiveFilePath;
-
-    public FileStorage(string filePath)
-    {
-        if (string.IsNullOrWhiteSpace(filePath)) throw new ArgumentNullException(nameof(filePath));
-        _originalFilePath = Path.GetFullPath(filePath);
-        _effectiveFilePath = _originalFilePath;
-    }
-
-    // effective path used for actual IO; may be switched to a fallback if original is not writable
-    string FilePath => _effectiveFilePath;
-
-    // Format per line: <escaped product>|<price-in-invariant-culture>|<escaped url>|<priceRunnerProductId>|<lastPriceUpdate>|<shopName>|<isManualPrice>|<isFavorite>|<productInfo>
-    private static string Escape(string s) => s?.Replace("\\", "\\\\").Replace("|", "\\|") ?? string.Empty;
-    private static string Unescape(string s) => s?.Replace("\\|", "|").Replace("\\\\", "\\") ?? string.Empty;
-
-    // Splits a line by '|' honoring backslash-escaping (\"|\" or \"\\\\\")
-    private static string[] SplitEscaped(string line)
-    {
-        var parts = new List<string>();
-        if (string.IsNullOrEmpty(line)) return parts.ToArray();
-
-        var sb = new StringBuilder();
-        bool escape = false;
-        foreach (char c in line)
-        {
-            if (escape)
-            {
-                sb.Append(c);
-                escape = false;
-                continue;
-            }
-
-            if (c == '\\')
-            {
-                escape = true;
-                continue;
-            }
-
-            if (c == '|')
-            {
-                parts.Add(sb.ToString());
-                sb.Clear();
-                continue;
-            }
-            sb.Append(c);
-        }
-
-        parts.Add(sb.ToString());
-        return parts.ToArray();
-    }
-
-    // Build a per-user fallback path in LocalApplicationData
-    private string GetFallbackPath()
-    {
-        string userDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        string dir = Path.Combine(userDir, "JulegaveListe");
-        string fileName = Path.GetFileName(_originalFilePath);
-        if (string.IsNullOrEmpty(fileName))
-        {
-            fileName = "gifts.txt";
-        }
-        return Path.Combine(dir, fileName);
-    }
-
-    public async Task<List<GiftInfo>> LoadAsync()
-    {
-        var list = new List<GiftInfo>();
-        string pathToRead = FilePath;
-        bool needsUpgrade = false;
-
-        // Check if primary path exists, otherwise use fallback
-        if (!File.Exists(FilePath))
-        {
-            string fallback = GetFallbackPath();
-            if (File.Exists(fallback))
-            {
-                pathToRead = fallback;
-            }
-        }
-
-        try
-        {
-            if (File.Exists(pathToRead))
-            {
-                using var sr = new StreamReader(pathToRead, Encoding.UTF8);
-                string? line;
-                while ((line = await sr.ReadLineAsync()) != null)
-                {
-                    if (string.IsNullOrWhiteSpace(line)) continue;
-                    var parts = SplitEscaped(line);
-                    if (parts.Length < 2) continue;
-                    string productPart = Unescape(parts[0]);
-                    string pricePart = parts[1];
-                    if (parts.Length < 9)
-                    {
-                        needsUpgrade = true;
-                    }
-                    string urlPart = parts.Length > 2 ? Unescape(parts[2]) : string.Empty;
-                    string prIdPart = parts.Length > 3 ? Unescape(parts[3]) : string.Empty;
-                    string lastUpdatePart = parts.Length > 4 ? parts[4] : string.Empty;
-                    string shopNamePart = parts.Length > 5 ? Unescape(parts[5]) : string.Empty;
-                    bool manualPrice = parts.Length > 6 && bool.TryParse(parts[6], out bool mp) && mp;
-                    string productInfo = parts.Length > 7 ? Unescape(parts[7]) : string.Empty;
-                    bool isFavorite = parts.Length > 8 && bool.TryParse(parts[8], out bool fav) && fav;
-
-                    if (!float.TryParse(pricePart, NumberStyles.Any, CultureInfo.InvariantCulture, out float price))
-                    {
-                        price = 0f;
-                    }
-                    DateTime lastUpdate = DateTime.MinValue;
-                    if (!string.IsNullOrEmpty(lastUpdatePart))
-                    {
-                        DateTime.TryParse(lastUpdatePart, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out lastUpdate);
-                    }
-                    list.Add(new GiftInfo(productPart, price, urlPart, prIdPart, lastUpdate, shopNamePart, manualPrice, productInfo, isFavorite));
-                }
-            }
-        }
-        catch (Exception)
-        {
-            // Ignore read errors
-        }
-
-        // Auto-upgrade old format to new format
-        if (needsUpgrade && list.Count > 0)
-        {
-            try
-            {
-                await SaveAllAsync(list);
-            }
-            catch
-            {
-                // Ignore save errors
-            }
-        }
-
-        return list;
-    }
-
-    public async Task AppendAsync(GiftInfo gift)
-    {
-        string line = $"{Escape(gift.Produkt)}|{gift.Price.ToString(CultureInfo.InvariantCulture)}|{Escape(gift.URl)}|{Escape(gift.PriceRunnerProductId)}|{gift.LastPriceUpdate.ToString("o", CultureInfo.InvariantCulture)}|{Escape(gift.ShopName)}|{gift.IsManualPrice}|{Escape(gift.ProductInfo)}{Environment.NewLine}";
-
-        bool primarySuccess = false;
-        
-        // Try to write to primary location (project folder)
-        try
-        {
-            await File.AppendAllTextAsync(FilePath, line, Encoding.UTF8);
-            primarySuccess = true;
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
-        catch (DirectoryNotFoundException)
-        {
-        }
-        catch (Exception)
-        {
-        }
-
-        // Also write to AppData fallback location (for backup)
-        try
-        {
-            string fallback = GetFallbackPath();
-            string? dir = Path.GetDirectoryName(fallback);
-            if (dir != null && !Directory.Exists(dir))
-            {
-                Directory.CreateDirectory(dir);
-            }
-            await File.AppendAllTextAsync(fallback, line, Encoding.UTF8);
-            if (!primarySuccess)
-            {
-                _effectiveFilePath = fallback;
-            }
-        }
-        catch (Exception)
-        {
-            if (!primarySuccess)
-            {
-                throw;
-            }
-        }
-    }
-
-    // save/overwrite the file with the provided list so data persists after closing terminal
-    public async Task SaveAsync(IEnumerable<GiftInfo> gifts)
-    {
-        var sb = new StringBuilder();
-        foreach (var g in gifts)
-        {
-            sb.Append(Escape(g.Produkt));
-            sb.Append('|');
-            sb.Append(g.Price.ToString(CultureInfo.InvariantCulture));
-            sb.Append('|');
-            sb.Append(Escape(g.URl));
-            sb.Append('|');
-            sb.Append(Escape(g.PriceRunnerProductId));
-            sb.Append('|');
-            sb.Append(g.LastPriceUpdate.ToString("o", CultureInfo.InvariantCulture));
-            sb.Append('|');
-            sb.Append(Escape(g.ShopName));
-            sb.Append('|');
-            sb.Append(g.IsManualPrice);
-            sb.Append('|');
-            sb.Append(Escape(g.ProductInfo));
-            sb.AppendLine();
-        }
-
-        bool primarySuccess = false;
-
-        // Try to write to primary location (project folder)
-        try
-        {
-            await File.WriteAllTextAsync(FilePath, sb.ToString(), Encoding.UTF8);
-            primarySuccess = true;
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
-        catch (DirectoryNotFoundException)
-        {
-        }
-        catch (Exception)
-        {
-        }
-
-        // Also write to AppData fallback (for backup)
-        try
-        {
-            string fallback = GetFallbackPath();
-            string? dir = Path.GetDirectoryName(fallback);
-            if (dir != null && !Directory.Exists(dir))
-            {
-                Directory.CreateDirectory(dir);
-            }
-            await File.WriteAllTextAsync(fallback, sb.ToString(), Encoding.UTF8);
-            if (!primarySuccess)
-            {
-                _effectiveFilePath = fallback;
-            }
-        }
-        catch (Exception)
-        {
-            if (!primarySuccess)
-            {
-                throw;
-            }
-        }
-    }
-
-    public async Task SaveAllAsync(IEnumerable<GiftInfo> gifts) => await SaveAsync(gifts);
-}
-
 // Background service that updates prices every 12 hours
 class PriceUpdateService : BackgroundService
 {
@@ -948,6 +564,18 @@ class PriceUpdateService : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         Console.WriteLine("Price update service started. Will update prices every 12 hours.");
+
+        // Run update immediately on first startup
+        try
+        {
+            Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] Running initial price update...");
+            await UpdateAllPricesAsync();
+            Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] Initial price update completed.");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Error during initial price update: {ex.Message}");
+        }
 
         while (!stoppingToken.IsCancellationRequested)
         {

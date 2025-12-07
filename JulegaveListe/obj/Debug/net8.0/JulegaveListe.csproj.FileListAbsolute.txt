@@ -32,7 +32,6 @@ C:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\bin\D
 C:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\bin\Debug\net8.0\JulegaveListe.runtimeconfig.json
 C:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\bin\Debug\net8.0\JulegaveListe.dll
 C:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\bin\Debug\net8.0\JulegaveListe.pdb
-C:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\bin\Debug\net8.0\HtmlAgilityPack.dll
 C:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\obj\Debug\net8.0\JulegaveListe.csproj.AssemblyReference.cache
 C:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\obj\Debug\net8.0\rpswa.dswa.cache.json
 C:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\obj\Debug\net8.0\JulegaveListe.GeneratedMSBuildEditorConfig.editorconfig
@@ -54,10 +53,6 @@ C:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\obj\D
 C:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\obj\Debug\net8.0\JulegaveListe.pdb
 C:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\obj\Debug\net8.0\JulegaveListe.genruntimeconfig.cache
 C:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\obj\Debug\net8.0\ref\JulegaveListe.dll
-C:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\bin\Debug\net8.0\selenium-manager\linux\selenium-manager
-C:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\bin\Debug\net8.0\selenium-manager\macos\selenium-manager
-C:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\bin\Debug\net8.0\selenium-manager\windows\selenium-manager.exe
-C:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\bin\Debug\net8.0\WebDriver.dll
 C:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\bin\Debug\net8.0\Microsoft.Data.Sqlite.dll
 C:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\bin\Debug\net8.0\SQLitePCLRaw.batteries_v2.dll
 C:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\bin\Debug\net8.0\SQLitePCLRaw.core.dll
@@ -85,3 +80,4 @@ C:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\bin\D
 C:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\bin\Debug\net8.0\runtimes\win-arm64\native\e_sqlite3.dll
 C:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\bin\Debug\net8.0\runtimes\win-x64\native\e_sqlite3.dll
 C:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\bin\Debug\net8.0\runtimes\win-x86\native\e_sqlite3.dll
+C:\Users\rud\OneDrive\Skrivebord\Julegave-main\JulegaveListe\JulegaveListe\bin\Debug\net8.0\PuppeteerSharp.dll
