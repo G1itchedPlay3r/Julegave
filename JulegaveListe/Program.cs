@@ -16,6 +16,53 @@ class BrowserAutomation
     private static readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
     private static bool _browserInitialized = false;
 
+    private static string? FindInstalledBrowser()
+    {
+        // Common installation paths for Chrome and Chromium on Windows
+        var possiblePaths = new List<string>
+        {
+            // Chrome paths
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Google", "Chrome", "Application", "chrome.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Google", "Chrome", "Application", "chrome.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Google", "Chrome", "Application", "chrome.exe"),
+            
+            // Chromium paths
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Chromium", "Application", "chrome.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Chromium", "Application", "chrome.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Chromium", "Application", "chrome.exe"),
+            
+            // Edge (Chromium-based)
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft", "Edge", "Application", "msedge.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Microsoft", "Edge", "Application", "msedge.exe"),
+        };
+
+        // Linux/Mac paths
+        if (!OperatingSystem.IsWindows())
+        {
+            possiblePaths.AddRange(new[]
+            {
+                "/usr/bin/google-chrome",
+                "/usr/bin/chromium",
+                "/usr/bin/chromium-browser",
+                "/snap/bin/chromium",
+                "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "/Applications/Chromium.app/Contents/MacOS/Chromium",
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local/share/chromium/chrome"),
+            });
+        }
+
+        foreach (var path in possiblePaths)
+        {
+            if (File.Exists(path))
+            {
+                Console.WriteLine($"Found installed browser at: {path}");
+                return path;
+            }
+        }
+
+        return null;
+    }
+
     public static async Task<IBrowser> GetBrowserAsync()
     {
         await _semaphore.WaitAsync();
@@ -23,9 +70,46 @@ class BrowserAutomation
         {
             if (_browser == null || !_browser.IsConnected)
             {
+                Console.WriteLine("Launching browser...");
+                
+                // First try to find an installed browser
+                var installedBrowserPath = FindInstalledBrowser();
+                
+                if (installedBrowserPath != null)
+                {
+                    try
+                    {
+                        _browser = await Puppeteer.LaunchAsync(new LaunchOptions
+                        {
+                            ExecutablePath = installedBrowserPath,
+                            Headless = true,
+                            Args = new[]
+                            {
+                                "--no-sandbox",
+                                "--disable-setuid-sandbox",
+                                "--disable-dev-shm-usage",
+                                "--disable-gpu",
+                                "--disable-software-rasterizer",
+                                "--disable-extensions",
+                                "--disable-images",
+                                "--blink-settings=imagesEnabled=false",
+                                "--disable-webgl",
+                                "--lang=da-DK"
+                            }
+                        });
+                        Console.WriteLine("Successfully launched installed browser");
+                        return _browser;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Failed to launch installed browser: {ex.Message}");
+                    }
+                }
+
+                // If no installed browser found or launch failed, download one
                 if (!_browserInitialized)
                 {
-                    Console.WriteLine("Downloading Chrome browser (first run only)...");
+                    Console.WriteLine("No installed browser found. Downloading Chrome browser (first run only)...");
                     try
                     {
                         var browserFetcher = new BrowserFetcher(SupportedBrowser.Chrome);
@@ -40,8 +124,6 @@ class BrowserAutomation
                     _browserInitialized = true;
                 }
 
-                Console.WriteLine("Launching browser...");
-                
                 // Try Chrome first
                 try
                 {

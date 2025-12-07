@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "SiqXP2+MYS4=",
+  "dgSpecHash": "inp+Zjq6B34=",
   "success": true,
-  "projectFilePath": "C:\\Users\\rud\\OneDrive\\Skrivebord\\Julegave-main\\JulegaveListe\\JulegaveListe\\JulegaveListe.csproj",
+  "projectFilePath": "D:\\Github\\Julegave\\JulegaveListe\\JulegaveListe.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\rud\\.nuget\\packages\\microsoft.data.sqlite\\10.0.0\\microsoft.data.sqlite.10.0.0.nupkg.sha512",
     "C:\\Users\\rud\\.nuget\\packages\\microsoft.data.sqlite.core\\10.0.0\\microsoft.data.sqlite.core.10.0.0.nupkg.sha512",
