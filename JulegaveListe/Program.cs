@@ -753,20 +753,24 @@ class PriceUpdateService : BackgroundService
                 
                 if (newName != item.Produkt) item.Produkt = newName;
                 
-                // Only update price if it's valid (not 0) and lower than current price
-                if (newPrice > 0 && newPrice < item.Price && Math.Abs(newPrice - item.Price) > 0.0001f)
+                // Update price if it's valid (not 0) and different from current price
+                if (newPrice > 0 && Math.Abs(newPrice - item.Price) > 0.0001f)
                 {
-                    Console.WriteLine($"[PRICE-UPDATE] {item.Produkt}: {item.Price} kr → {newPrice} kr (savings: {item.Price - newPrice} kr)");
+                    var priceDiff = newPrice - item.Price;
+                    if (priceDiff < 0)
+                    {
+                        Console.WriteLine($"[PRICE-UPDATE] {item.Produkt}: {item.Price} kr → {newPrice} kr (savings: {-priceDiff} kr)");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[PRICE-UPDATE] {item.Produkt}: {item.Price} kr → {newPrice} kr (increased: {priceDiff} kr)");
+                    }
                     item.Price = newPrice;
                     anyChanged = true;
                 }
                 else if (newPrice == 0)
                 {
                     Console.WriteLine($"[PRICE-UPDATE] {item.Produkt}: Price returned as 0, keeping original {item.Price} kr");
-                }
-                else if (newPrice > item.Price)
-                {
-                    Console.WriteLine($"[PRICE-UPDATE] {item.Produkt}: Price increased to {newPrice} kr, keeping original {item.Price} kr");
                 }
                 
                 item.LastPriceUpdate = DateTime.Now;
