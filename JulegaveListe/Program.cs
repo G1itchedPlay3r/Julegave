@@ -25,8 +25,8 @@ class BrowserAutomation
             {
                 if (!_browserInitialized)
                 {
-                    Console.WriteLine("Downloading Chromium browser (first run only)...");
-                    var browserFetcher = new BrowserFetcher();
+                    Console.WriteLine("Downloading Chrome browser (first run only)...");
+                    var browserFetcher = new BrowserFetcher(SupportedBrowser.Chrome);
                     await browserFetcher.DownloadAsync();
                     _browserInitialized = true;
                 }
@@ -34,6 +34,7 @@ class BrowserAutomation
                 Console.WriteLine("Launching browser...");
                 _browser = await Puppeteer.LaunchAsync(new LaunchOptions
                 {
+                    Browser = SupportedBrowser.Chrome,
                     Headless = true,
                     Args = new[]
                     {
@@ -46,7 +47,8 @@ class BrowserAutomation
                         "--disable-images",
                         "--blink-settings=imagesEnabled=false",
                         "--disable-webgl",
-                        "--lang=da-DK"
+                        "--lang=da-DK",
+                        "--single-process"
                     }
                 });
             }
