@@ -26,31 +26,67 @@ class BrowserAutomation
                 if (!_browserInitialized)
                 {
                     Console.WriteLine("Downloading Chrome browser (first run only)...");
-                    var browserFetcher = new BrowserFetcher(SupportedBrowser.Chrome);
-                    await browserFetcher.DownloadAsync();
+                    try
+                    {
+                        var browserFetcher = new BrowserFetcher(SupportedBrowser.Chrome);
+                        await browserFetcher.DownloadAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Chrome download failed, trying Chromium: {ex.Message}");
+                        var browserFetcher = new BrowserFetcher(SupportedBrowser.Chromium);
+                        await browserFetcher.DownloadAsync();
+                    }
                     _browserInitialized = true;
                 }
 
                 Console.WriteLine("Launching browser...");
-                _browser = await Puppeteer.LaunchAsync(new LaunchOptions
+                
+                // Try Chrome first
+                try
                 {
-                    Browser = SupportedBrowser.Chrome,
-                    Headless = true,
-                    Args = new[]
+                    _browser = await Puppeteer.LaunchAsync(new LaunchOptions
                     {
-                        "--no-sandbox",
-                        "--disable-setuid-sandbox",
-                        "--disable-dev-shm-usage",
-                        "--disable-gpu",
-                        "--disable-software-rasterizer",
-                        "--disable-extensions",
-                        "--disable-images",
-                        "--blink-settings=imagesEnabled=false",
-                        "--disable-webgl",
-                        "--lang=da-DK",
-                        "--single-process"
-                    }
-                });
+                        Browser = SupportedBrowser.Chrome,
+                        Headless = true,
+                        Args = new[]
+                        {
+                            "--no-sandbox",
+                            "--disable-setuid-sandbox",
+                            "--disable-dev-shm-usage",
+                            "--disable-gpu",
+                            "--disable-software-rasterizer",
+                            "--disable-extensions",
+                            "--disable-images",
+                            "--blink-settings=imagesEnabled=false",
+                            "--disable-webgl",
+                            "--lang=da-DK"
+                        }
+                    });
+                }
+                catch
+                {
+                    // Fallback to Chromium
+                    Console.WriteLine("Chrome launch failed, trying Chromium...");
+                    _browser = await Puppeteer.LaunchAsync(new LaunchOptions
+                    {
+                        Browser = SupportedBrowser.Chromium,
+                        Headless = true,
+                        Args = new[]
+                        {
+                            "--no-sandbox",
+                            "--disable-setuid-sandbox",
+                            "--disable-dev-shm-usage",
+                            "--disable-gpu",
+                            "--disable-software-rasterizer",
+                            "--disable-extensions",
+                            "--disable-images",
+                            "--blink-settings=imagesEnabled=false",
+                            "--disable-webgl",
+                            "--lang=da-DK"
+                        }
+                    });
+                }
             }
             return _browser;
         }
